@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      DATABASE_URL: postgresql://openpg:123456@localhost:5432/backend_db?schema=public
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: openpg
+          POSTGRES_PASSWORD: 123456
+          POSTGRES_DB: backend_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U openpg -d backend_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Configure npm auth
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}" --location=project
+
+      - name: Check npm auth
+        run: npm whoami || echo "not authenticated"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run prisma connection test
+        run: npx ts-node prisma/test-connection.ts
+
+      - name: Remove npm auth
+        if: always()
+        run: |
+          rm -f ~/.npmrc
+          npm config delete //registry.npmjs.org/:_authToken --location=project || true
