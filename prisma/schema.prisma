@@ -6,10 +6,248 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+enum ProductType {
+  GOODS
+  SERVICE
+  CONSUMABLE
+}
+
+enum StockMovementType {
+  IN_PURCHASE
+  IN_RETURN
+  IN_ADJUST
+  IN_TRANSFER
+  OUT_SALE
+  OUT_LOSS
+  OUT_ADJUST
+  OUT_TRANSFER
+}
 
 model User {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   email     String   @unique
   name      String?
+  password  String
+  role      String   @default("cashier")
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales     Sale[]
+}
+
+model Product {
+  id             String     @id @default(uuid())
+  sku            String     @unique
+  barcode        String?    @unique
+  name           String
+  description    String?
+  image          String?
+  type           ProductType @default(GOODS)
+  categoryId     String?
+  category       Category?  @relation(fields: [categoryId], references: [id])
+
+  price          Decimal    @default(0) @db.Decimal(65, 30)
+  cost           Decimal    @default(0) @db.Decimal(65, 30)
+  currency       String     @default("VES")
+
+  taxId          String?
+  tax            Tax?       @relation(fields: [taxId], references: [id])
+
+  unit           String     @default("unidad")
+  supplierId     String?
+  supplier       Supplier?  @relation(fields: [supplierId], references: [id])
+
+  inventoryItems InventoryItem[]
+  movements      StockMovement[]
+  saleLines      SaleLine[]
+  purchaseLines  PurchaseLine[]
+
+  active         Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([name])
+  @@index([categoryId])
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Tax {
+  id        String    @id @default(uuid())
+  name      String
+  rate      Decimal   @db.Decimal(65, 30)
+  code      String?
+  products  Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryItem {
+  id             String   @id @default(uuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+  storeId        String
+  store          Store    @relation(fields: [storeId], references: [id])
+
+  quantity       Decimal  @default(0) @db.Decimal(65, 30)
+  reserved       Decimal  @default(0) @db.Decimal(65, 30)
+  minStock       Decimal  @default(0) @db.Decimal(65, 30)
+  maxStock       Decimal? @db.Decimal(65, 30)
+  locationInStore String?
+
+  lastAdjustedAt DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([productId, storeId])
+}
+
+model StockMovement {
+  id            String           @id @default(uuid())
+  opId          String?          @unique
+  productId     String
+  product       Product          @relation(fields: [productId], references: [id])
+  storeId       String
+  store         Store            @relation(fields: [storeId], references: [id])
+  type          StockMovementType
+  quantity      Decimal          @db.Decimal(65, 30)
+
+  costAtMoment  Decimal?         @db.Decimal(65, 30)
+  priceAtMoment Decimal?         @db.Decimal(65, 30)
+
+  referenceId   String?
+  reason        String?
+  createdAt     DateTime         @default(now())
+
+  @@index([storeId, productId])
+  @@index([createdAt])
+}
+
+model Supplier {
+  id        String    @id @default(uuid())
+  name      String
+  rif       String?
+  email     String?
+  phone     String?
+  address   String?
+
+  products  Product[]
+  purchases Purchase[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Purchase {
+  id           String         @id @default(uuid())
+  supplierId   String
+  supplier     Supplier       @relation(fields: [supplierId], references: [id])
+  storeId      String
+  store        Store          @relation(fields: [storeId], references: [id])
+
+  status       String
+  total        Decimal        @db.Decimal(65, 30)
+  dateOrdered  DateTime       @default(now())
+  dateReceived DateTime?
+
+  lines        PurchaseLine[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PurchaseLine {
+  id         String   @id @default(uuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id])
+
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+
+  quantity   Decimal  @db.Decimal(65, 30)
+  unitCost   Decimal  @db.Decimal(65, 30)
+  totalCost  Decimal  @db.Decimal(65, 30)
+}
+
+model Store {
+  id             String          @id @default(uuid())
+  name           String
+  type           String
+  timezone       String?
+  metadata       Json?
+
+  inventory      InventoryItem[]
+  stockMovements StockMovement[]
+  purchases      Purchase[]
+  posDevices     POSDevice[]
+  sales          Sale[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model POSDevice {
+  id         String   @id @default(uuid())
+  deviceId   String   @unique
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id])
+  lastSeen   DateTime?
+  appVersion String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sales      Sale[]
+  syncOps    SyncOperation[]
+}
+
+model Sale {
+  id        String    @id @default(uuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id])
+  deviceId  String?
+  posDevice POSDevice? @relation(fields: [deviceId], references: [deviceId])
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id])
+
+  total     Decimal   @db.Decimal(65, 30)
+  status    String
+  createdAt DateTime  @default(now())
+
+  saleLines SaleLine[]
+}
+
+model SaleLine {
+  id        String   @id @default(uuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Decimal  @db.Decimal(65, 30)
+  price     Decimal  @db.Decimal(65, 30)
+  discount  Decimal? @db.Decimal(65, 30)
+  total     Decimal? @db.Decimal(65, 30)
+}
+
+model SyncOperation {
+  id             String   @id @default(uuid())
+  opId           String?  @unique
+  deviceId       String?
+  device         POSDevice? @relation(fields: [deviceId], references: [deviceId])
+  opType         String
+  payload        Json
+  timestamp      DateTime @default(now())
+  status         String   @default("pending")
+  serverVersion  Int?
+  serverAppliedAt DateTime?
 }
