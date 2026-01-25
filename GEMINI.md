@@ -173,3 +173,6 @@ npm run start:dev
 
 ---
 Actualizado: guía básica para empezar el backend y la sincronización offline.
+
+npx prisma migrate dev --name init
+npm run start:dev

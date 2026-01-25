@@ -250,4 +250,4 @@ model SyncOperation {
   status         String   @default("pending")
   serverVersion  Int?
   serverAppliedAt DateTime?
-}
+} 
