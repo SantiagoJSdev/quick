@@ -170,6 +170,7 @@ npm run start:dev
 ## Documentación y mantenimiento
 - Mantener este archivo como la referencia de arquitectura y actualizarlo con decisiones de diseño.
 - Crear una carpeta `docs/` para diagramas, workflows y casos de conflicto de sincronización.
+- Usar `docs/IMPLEMENTATION_TRACKER.md` como tablero vivo de módulos, TODOs, riesgos y alcance MVP.
 
 ---
 Actualizado: guía básica para empezar el backend y la sincronización offline.
