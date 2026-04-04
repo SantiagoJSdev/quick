@@ -13,6 +13,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { OpsModule } from './modules/ops/ops.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -28,6 +29,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PurchasesModule,
     ProductsModule,
     SyncModule,
+    OpsModule,
   ],
   controllers: [AppController],
   providers: [

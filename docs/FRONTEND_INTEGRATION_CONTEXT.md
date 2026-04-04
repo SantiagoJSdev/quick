@@ -14,7 +14,7 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 ## 2) API base
 
 - Prefijo: `/api/v1`
-- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. La ruta `GET /` (raiz) no lo exige.
+- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. No lo exigen: `GET /` (raiz) y **`GET /api/v1/ops/metrics`** (métricas operativas / M5).
 - Para `GET /api/v1/stores/:storeId/business-settings`, `X-Store-Id` debe ser **igual** a `:storeId`.
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
 - Productos hoy:
@@ -144,4 +144,5 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 | Ventas API | `src/modules/sales/` |
 | Compras API | `src/modules/purchases/` |
 | FX snapshot tienda | `src/modules/exchange-rates/store-fx-snapshot.service.ts` |
+| Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, scheduler) |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |

@@ -23,6 +23,27 @@
             "header": [],
             "url": "{{baseUrl}}/"
           }
+        },
+        {
+          "name": "GET /api/v1/ops/metrics (M5, sin X-Store-Id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ops", "metrics"],
+              "query": [
+                {
+                  "key": "storeId",
+                  "value": "{{storeId}}",
+                  "disabled": true,
+                  "description": "Opcional: limitar reconciliación inventario a una tienda"
+                }
+              ]
+            },
+            "description": "Reconciliación inventario vs movimientos, outbox, sync. Sin header de tienda."
+          }
         }
       ]
     },

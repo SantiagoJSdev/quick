@@ -94,7 +94,7 @@ Cada subcarpeta con nombre tipo **`20260404112022_sync_push_store_sync_state`** 
 
 ## Header `X-Store-Id` (obligatorio en casi toda la API)
 
-Salvo la ruta raiz (`GET /`), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`** para esa tienda. Asi no se usan endpoints sin tienda configurada.
+Salvo la raiz (`GET /`) y **`GET /api/v1/ops/metrics`** (M5: observabilidad sin tienda), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`**. Protege `/ops/metrics` en producción (red interna, API gateway, etc.).
 
 - **`GET /api/v1/stores/:storeId/business-settings`**: el `X-Store-Id` debe coincidir con `:storeId`.
 - **Tasas**: solo por tienda (no hay tasa global `storeId null` en la API actual).
@@ -105,7 +105,7 @@ Con la API en marcha (`npm run start:dev`): abre **http://localhost:3000/api/doc
 
 ## Postman: `postman/QuickMarket_API.postman_collection.json`
 
-Es un archivo **colección de Postman** (formato JSON Collection v2.1). **No lo ejecuta Nest**; sirve para **importarlo en Postman** (Import → elegir el archivo) y tener requests de ejemplo (raíz, productos, inventario, ventas, **compras**, business-settings, tasas, `sync/push` incl. `SALE` y `PURCHASE_RECEIVE`) con variables **`baseUrl`**, **`storeId`**, **`productId`**, **`saleId`**, **`supplierId`**, **`purchaseId`**. Así pruebas la API sin reescribir URLs y headers cada vez; puedes versionarlo en git junto al backend.
+Es un archivo **colección de Postman** (formato JSON Collection v2.1). **No lo ejecuta Nest**; sirve para **importarlo en Postman** (Import → elegir el archivo) y tener requests de ejemplo (raíz, **ops/metrics**, productos, inventario, ventas, **compras**, business-settings, tasas, `sync/push` incl. `SALE` y `PURCHASE_RECEIVE`) con variables **`baseUrl`**, **`storeId`**, **`productId`**, **`saleId`**, **`supplierId`**, **`purchaseId`**. Así pruebas la API sin reescribir URLs y headers cada vez; puedes versionarlo en git junto al backend.
 
 Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o columna `id` en `Store` en Prisma Studio). Para **`sync/push`**, si repites el mismo `opId` que ya se aplicó, la API responderá `skipped`: usa un UUID nuevo por operación de prueba o borra la fila en `SyncOperation` si quieres repetir el mismo id.
 
@@ -116,6 +116,8 @@ Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o
 **Ventas**: `POST /api/v1/sales`, `GET /api/v1/sales/:id`; `sync/push` con `opType: SALE` (misma lógica de negocio en transacción); ver Swagger y `SYNC_CONTRACTS.md`.
 
 **Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno.
+
+**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`.
 
 ## Project setup
 

@@ -10,7 +10,7 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Quick Market API')
     .setDescription(
-      'Backend POS / mini-mercado: PostgreSQL como fuente de verdad, Mongo opcional para read models (catálogo, FX). Casi todos los endpoints requieren el header X-Store-Id.',
+      'Backend POS / mini-mercado: PostgreSQL como fuente de verdad, Mongo opcional para read models (catálogo, FX). Casi todos los endpoints requieren el header X-Store-Id; excepción: GET /api/v1/ops/metrics (observabilidad M5).',
     )
     .setVersion('1.0')
     .addApiKey(

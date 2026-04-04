@@ -82,8 +82,8 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 ### Estado general de avance (actualizar en cada entrega)
 
-- Estado de fase: `Sprint 1` + `M2–M4 operativos; compras REST+sync + FX compartido + tests conversión`
-- Avance global estimado Fase 1: `~85%` (venta/compra confirmadas, sync SALE/PURCHASE_RECEIVE; pendiente M5 jobs y devoluciones)
+- Estado de fase: `Sprint 1` + `M2–M5 MVP (ops/métricas); devoluciones y refinamiento M6`
+- Avance global estimado Fase 1: `~90%` (M5 métricas + job log; pendiente devoluciones, integración FX pesada, dashboards externos)
 - Ultima actualizacion: `2026-04-03`
 
 ### Implementado vs. pasos a futuro (deuda conocida)
@@ -104,7 +104,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - M2 Inventory base: `DONE` (API ajustes + lectura; sin reservas avanzadas)
 - M3 Sync offline POS: `IN_PROGRESS` (push/pull + `INVENTORY_ADJUST` + `SALE` + `PURCHASE_RECEIVE`)
 - M4 Sales integradas: `DONE`
-- M5 Reconciliacion y observabilidad: `TODO`
+- M5 Reconciliacion y observabilidad: `DONE` (MVP: `OpsModule`, métricas REST, scheduler + logs)
 - M6 Multi-moneda (dominio + API): `IN_PROGRESS` (schema + docs; servicios y pruebas pendientes)
 
 ### M0 - Fundacion tecnica
@@ -153,9 +153,9 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [ ] Pruebas integracion criticas (FX + offline + no mutacion historico).
 
 ### M5 - Reconciliacion y observabilidad
-- [ ] Job de conciliacion inventario vs movimientos.
-- [ ] Alertas por desfases y cola outbox acumulada.
-- [ ] Metricas de lag de sincronizacion.
+- [x] Job de conciliacion inventario vs movimientos (suma algebraica `StockMovement` IN_* / OUT_* vs `InventoryItem.quantity`; `GET /api/v1/ops/metrics`, query opcional `storeId`).
+- [x] Alertas por desfases y cola outbox acumulada (scheduler configurable: backlog pending, eventos FAILED, `pendingLagSeconds`; umbrales por env).
+- [x] Metricas de lag de sincronizacion (`outbox.pendingLagSeconds`; conteos `SyncOperation` por `status` + `StoreSyncState.serverVersion` por tienda).
 
 ## 4) Riesgos principales y mitigacion
 
@@ -179,7 +179,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - Mitigacion:
   - Outbox pattern obligatorio para cambios de producto.
   - worker con retry exponencial + dead-letter.
-  - endpoint de health y metrica de `outbox_lag_seconds`.
+  - `GET /api/v1/ops/metrics` expone `outbox.pendingLagSeconds` y backlog; job M5 alerta en logs.
 
 ### R4 - Conflictos por cambios concurrentes
 - Riesgo: dos POS actualizan datos relacionados al mismo tiempo.
@@ -231,6 +231,7 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Módulo **ventas (M4)**: `POST /api/v1/sales`, `GET /api/v1/sales/:id`; `sync/push` `SALE` operativo (FX snapshot, `OUT_SALE` por línea, idempotencia `sale.id` + `opId`). Ver `src/modules/sales/`, `SYNC_CONTRACTS.md`.
 - [x] DONE - Módulo **compras / recepción**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` `PURCHASE_RECEIVE`; `IN_PURCHASE` por línea; seed `Supplier` por defecto. Ver `src/modules/purchases/`.
 - [x] DONE - **FX compartido**: `StoreFxSnapshotService` + `FxSnapshotDto` en `exchange-rates` (ventas/compras/sync).
+- [x] DONE - **M5 observabilidad**: `GET /api/v1/ops/metrics` (reconciliación inventario, outbox, sync); `OpsSchedulerService` (intervalo env, alertas en log). Ver `src/modules/ops/`.
 - [x] DONE - Swagger en `http://localhost:3000/api/docs` (`@nestjs/swagger` + DTOs documentados en sync).
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
 
@@ -265,3 +266,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-04: Tabla **Implementado vs. pasos a futuro** en tracker; **M2 inventario** (`GET/POST inventory`, movimientos, ajustes atómicos, costeo funcional); `sync/push` `INVENTORY_ADJUST` operativo.
 - 2026-04-03: **M4 ventas**: `POST/GET sales`, conversión documento→funcional (USD/VES), `sync/push` `SALE` con `createSaleTx` en transacción de batch; movimientos `OUT_SALE` con `opId` por línea; idempotencia por `sale.id` existente en tienda.
 - 2026-04-03: **Compras + M6 parcial**: `POST/GET purchases`, `sync/push` `PURCHASE_RECEIVE`, `createPurchaseTx` + `IN_PURCHASE`; `StoreFxSnapshotService` extraído de ventas; tests `convert-amount.spec.ts`; DTO `sync/push` incluye `PURCHASE_RECEIVE`.
+- 2026-04-03: **M5**: módulo `ops` con reconciliación inventario vs movimientos (SQL agregado), métricas outbox/sync, job por `setInterval` + umbrales `OUTBOX_*` / desactivación `OPS_SCHEDULER_ENABLED=0`.
