@@ -95,7 +95,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 | **Ajustes de inventario en `pull`** | No: el POS actualiza stock vía **push** (`INVENTORY_ADJUST`) o **REST** | Opcional: `INVENTORY_*` en pull para auditoría multi-dispositivo |
 | **`reserved` / reservas** | Campo existe; API de ajuste solo valida `quantity - reserved` en salidas | Endpoints de reserva para carrito / pedidos |
 | **Ventas `SALE` / compras / devoluciones en sync** | `SALE`, `SALE_RETURN`, `PURCHASE_RECEIVE`, `INVENTORY_ADJUST`, `NOOP` | Transferencias; más tests por `opType` en CI |
-| **Multi-moneda** | `StoreFxSnapshotService` + conversión documento→funcional; tests `convert-amount.spec.ts` | Más pares; integración FX crítica (M6) |
+| **Multi-moneda** | `StoreFxSnapshotService` + conversión; tests unitarios + integración `RUN_INTEGRATION=1` (FX inmutable en venta, `SALE` sync) | Más pares; ampliar integración (compras, devoluciones) |
 
 ### Estado por modulo
 
@@ -105,7 +105,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - M3 Sync offline POS: `DONE` (push/pull + ops implementadas; tests unitarios `NOOP` / `INVENTORY_ADJUST` / `unknown_op_type` en `sync.service.spec.ts`)
 - M4 Sales integradas: `DONE`
 - M5 Reconciliacion y observabilidad: `DONE` (MVP: `OpsModule`, métricas REST, scheduler + logs)
-- M6 Multi-moneda (dominio + API): `IN_PROGRESS` (schema + docs; servicios y pruebas pendientes)
+- M6 Multi-moneda (dominio + API): `IN_PROGRESS` (API + conversión listas; integración crítica parcial: `sales-fx-historical.integration.spec.ts`, sync `SALE` opId)
 
 ### M0 - Fundacion tecnica
 - [x] Estándar **errores** JSON bajo `api/v1`: `{ statusCode, error, message[], requestId }` vía `ApiExceptionFilter` (`src/common/filters/api-exception.filter.ts`). Respuestas **2xx** siguen siendo el cuerpo del recurso (sin envoltorio global); cabecera `X-Request-Id` en respuestas HTTP.
@@ -150,13 +150,13 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] API tasas: `GET /exchange-rates/latest` + `POST /exchange-rates` (solo por tienda; header `X-Store-Id`; outbox -> Mongo `fx_rates_read`).
 - [x] Confirmacion compra/venta MVP: `POST /sales`, `POST /purchases`, `sync/push` `SALE` / `PURCHASE_RECEIVE`; `StoreFxSnapshotService` compartido; idempotencia `opId` por línea + `id` documento.
 - [x] Devoluciones venta MVP: `SaleReturn` + `IN_RETURN`; política **heredar FX** de venta original; doc `docs/api/RETURNS_POLICY.md`; REST + `sync/push` `SALE_RETURN`. (Futuro: tasa del día en devolución.)
-- [ ] Pruebas integracion criticas (FX + offline + no mutacion historico).
+- [x] Pruebas integración críticas (con `RUN_INTEGRATION=1`): FX **no se reescribe** en ventas ya guardadas al insertar tasa más nueva (`sales-fx-historical.integration.spec.ts`); offline **sync `SALE`** mismo `opId` → `skipped` (`sync.service.integration.spec.ts`). Sigue pendiente ampliar (compras, devoluciones, outbox→Mongo E2E).
 
 ### M5 - Reconciliacion y observabilidad
 - [x] Job de conciliacion inventario vs movimientos (suma algebraica `StockMovement` IN_* / OUT_* vs `InventoryItem.quantity`; `GET /api/v1/ops/metrics`, query opcional `storeId`).
 - [x] Alertas por desfases y cola outbox acumulada (scheduler configurable: backlog pending, eventos FAILED, `pendingLagSeconds`; umbrales por env).
 - [x] Metricas de lag de sincronizacion (`outbox.pendingLagSeconds`; conteos `SyncOperation` por `status` + `StoreSyncState.serverVersion` por tienda).
-- [ ] **Pendiente (seguridad):** autenticación / token para `GET /api/v1/ops/metrics` (y futuras rutas `/ops/*`); hoy solo documentado como riesgo de exposición en README.
+- [x] **Seguridad `/ops/*`:** `OpsAuthGuard` — `OPS_API_KEY` (`X-Ops-Api-Key` o `Authorization: Bearer`), opcional `OPS_IP_ALLOWLIST`; sin clave ni allowlist el endpoint queda abierto con warning en log (solo conveniente en dev). `TRUST_PROXY=1` para allowlist detrás de proxy.
 
 ## 4) Riesgos principales y mitigacion
 
@@ -212,8 +212,8 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 
 Checklist vivo; marcar al cerrar cada ítem.
 
-- [ ] **1. Seguridad `/ops/*`** — API key o Bearer + env; opcional allowlist IP (ver § M5 pendiente y `Proximas tareas`).
-- [ ] **2. M6 — Pruebas integración críticas** — FX + offline + no mutación de histórico (más allá de unitarios `convert-amount`, sync mocks, outbox opt-in).
+- [x] **1. Seguridad `/ops/*`** — `OPS_API_KEY` + cabeceras `X-Ops-Api-Key` o `Bearer`; opcional `OPS_IP_ALLOWLIST`; `TRUST_PROXY` (ver M5 y README).
+- [x] **2. M6 — Pruebas integración críticas** — FX inmutable + sync `SALE` mismo `opId` (`npm run test:integration` + seed).
 - [x] **3. M0 — Respuestas / trazabilidad** — Errores JSON unificados + `X-Request-Id` + `requestId` en payload de error (hecho).
 - [x] **4. M3 — Cierre + tests sync** — Módulo marcado DONE; tests `push()` con transacción simulada: `NOOP`, `INVENTORY_ADJUST` aplicado, `unknown_op_type` (`sync.service.spec.ts`).
 - [ ] **5. M2 futuro** — PATCH metadatos línea inventario; API reservas (`reserved`).
@@ -252,12 +252,14 @@ Checklist vivo; marcar al cerrar cada ítem.
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
 - [x] DONE - **M0 API**: `RequestIdMiddleware`, `ApiExceptionFilter`, Swagger opcional `X-Request-Id`; tests `api-exception.filter.spec.ts`.
 - [x] DONE - **M3 tests sync**: ampliación `sync.service.spec.ts` (`NOOP`, `INVENTORY_ADJUST`, op desconocida).
+- [x] DONE - **Checklist seguridad `/ops/*`**: `OpsAuthGuard`, env `OPS_*`, tests `ops-auth.guard.spec.ts`.
+- [x] DONE - **Checklist M6 integración**: `sales-fx-historical.integration.spec.ts` + `sync.service.integration.spec.ts` (`SALE` mismo `opId`).
 
 ### Proximas tareas (sprint 2+)
 
 - [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
 - [ ] TODO - Completar contexto Front con ejemplos JSON por pantalla; ampliar con más FX.
-- [ ] TODO - **Auth `/ops/*`**: API key o Bearer (`Authorization`) validado contra env; opcional IP allowlist (documentar en README).
+- [x] DONE - **Auth `/ops/*`**: `OpsAuthGuard`, `OPS_API_KEY`, `OPS_IP_ALLOWLIST`, `TRUST_PROXY`; Swagger + README.
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -288,3 +290,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: **M5**: módulo `ops` con reconciliación inventario vs movimientos (SQL agregado), métricas outbox/sync, job por `setInterval` + umbrales `OUTBOX_*` / desactivación `OPS_SCHEDULER_ENABLED=0`.
 - 2026-04-03: **M6 devoluciones**: `SaleReturn` + `SaleReturnLine`, `IN_RETURN` con COGS desde `OUT_SALE` agregado por venta/producto; FX heredada; `SALE_RETURN` en sync; auth `/ops/*` dejada como backlog explícito.
 - 2026-04-04: **M0 + M3**: errores JSON + `X-Request-Id`; checklist “Lo que sigue o falta” en §5; M3 `DONE`; tests sync por tipo (mock `$transaction`).
+- 2026-04-04: **Checklist 1–2**: `OpsAuthGuard` en `/ops/*`; integración M6 — venta conserva FX tras nueva `ExchangeRate`; sync `SALE` idempotente por `opId`.

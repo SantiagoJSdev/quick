@@ -1,12 +1,21 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiQuery,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SkipStoreConfigured } from '../../common/metadata';
 import { InventoryReconciliationService } from './inventory-reconciliation.service';
+import { OpsAuthGuard } from './ops-auth.guard';
 import { QueueMetricsService } from './queue-metrics.service';
 
 @ApiTags('ops')
 @Controller('ops')
 @SkipStoreConfigured()
+@UseGuards(OpsAuthGuard)
+@ApiSecurity('X-Ops-Api-Key')
+@ApiSecurity('ops-bearer')
 export class OpsController {
   constructor(
     private readonly reconciliation: InventoryReconciliationService,
@@ -16,7 +25,7 @@ export class OpsController {
   @Get('metrics')
   @ApiOperation({
     summary:
-      'Métricas operativas: reconciliación inventario, outbox, sync (sin X-Store-Id)',
+      'Métricas operativas: reconciliación inventario, outbox, sync (sin X-Store-Id). Si `OPS_API_KEY` está definido, enviar `X-Ops-Api-Key` o `Authorization: Bearer`. Opcional: `OPS_IP_ALLOWLIST`.',
   })
   @ApiQuery({
     name: 'storeId',

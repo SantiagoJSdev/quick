@@ -99,7 +99,9 @@ Cada subcarpeta con nombre tipo **`20260404112022_sync_push_store_sync_state`** 
 
 ## Header `X-Store-Id` (obligatorio en casi toda la API)
 
-Salvo la raiz (`GET /`) y **`GET /api/v1/ops/metrics`** (M5: observabilidad sin tienda), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`**. Protege `/ops/metrics` en producción (red interna, API gateway, etc.).
+Salvo la raiz (`GET /`) y **`GET /api/v1/ops/metrics`** (M5: observabilidad sin tienda), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`**.
+
+**`/api/v1/ops/*`:** si defines **`OPS_API_KEY`** en el entorno, las peticiones deben llevar **`X-Ops-Api-Key`** o **`Authorization: Bearer <mismo valor>`**. Opcional: **`OPS_IP_ALLOWLIST`** (IPs separadas por coma). Si no hay clave ni allowlist, el endpoint queda abierto y el servidor registra un **warning** en el arranque del primer acceso (solo para desarrollo). Tras un proxy, **`TRUST_PROXY=1`** hace que la allowlist use `X-Forwarded-For` de forma fiable.
 
 - **`GET /api/v1/stores/:storeId/business-settings`**: el `X-Store-Id` debe coincidir con `:storeId`.
 - **Tasas**: solo por tienda (no hay tasa global `storeId null` en la API actual).
@@ -122,7 +124,9 @@ Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o
 
 **Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno.
 
-**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`. **Pendiente:** autenticación para `/ops/*` (ver `docs/IMPLEMENTATION_TRACKER.md`).
+**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`. **Auth:** `OPS_API_KEY` / `OPS_IP_ALLOWLIST` (ver arriba).
+
+**Pruebas de integración (M6 parcial):** `npm run test:integration` (`RUN_INTEGRATION=1`) — requiere DB sembrada (`npm run db:seed`). Cubre outbox al crear producto, sync `NOOP`/pull, **FX inmutable en ventas** y **SALE** en sync con el mismo `opId`.
 
 **Devoluciones (M6)**: `POST /api/v1/sale-returns`, `GET /api/v1/sale-returns/:id`; `sync/push` `SALE_RETURN`. Política y límites: `docs/api/RETURNS_POLICY.md`.
 

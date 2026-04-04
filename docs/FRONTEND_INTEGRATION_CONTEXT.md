@@ -14,7 +14,7 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 ## 2) API base
 
 - Prefijo: `/api/v1`
-- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. No lo exigen: `GET /` (raiz) y **`GET /api/v1/ops/metrics`** (métricas operativas / M5).
+- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. No lo exigen: `GET /` (raiz) y **`GET /api/v1/ops/metrics`** (M5). Ese endpoint puede exigir **`X-Ops-Api-Key`** o **`Authorization: Bearer`** si el servidor tiene `OPS_API_KEY`; opcional allowlist por IP (`README`).
 - **Trazabilidad (M0):** opcional `X-Request-Id`; si no se envía, el servidor genera uno. Siempre se devuelve en cabecera. Errores HTTP: JSON `{ statusCode, error, message[], requestId }`.
 - Para `GET /api/v1/stores/:storeId/business-settings`, `X-Store-Id` debe ser **igual** a `:storeId`.
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
@@ -152,6 +152,6 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 | Compras API | `src/modules/purchases/` |
 | Devoluciones venta | `src/modules/sale-returns/` + `docs/api/RETURNS_POLICY.md` |
 | FX snapshot tienda | `src/modules/exchange-rates/store-fx-snapshot.service.ts` |
-| Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, scheduler) |
+| Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, `OpsAuthGuard`, scheduler) |
 | Errores + requestId M0 | `src/common/filters/api-exception.filter.ts`, `src/common/middleware/request-id.middleware.ts` |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |
