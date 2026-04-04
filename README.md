@@ -92,6 +92,11 @@ Cada subcarpeta con nombre tipo **`20260404112022_sync_push_store_sync_state`** 
 
 **Ejemplo concreto** `20260404112022_sync_push_store_sync_state`: crea la tabla **`StoreSyncState`** (contador **`serverVersion`** por tienda para sync) y amplía **`SyncOperation`** (campos y FKs necesarios para **`POST /api/v1/sync/push`** e idempotencia por `opId`). El API en sí no “lee” esa carpeta en runtime; solo la usa Prisma al migrar.
 
+## Errores JSON y `X-Request-Id` (M0)
+
+- Cada respuesta HTTP lleva cabecera **`X-Request-Id`** (UUID generado por el servidor o el valor que envíes, hasta 128 caracteres).
+- En **4xx/5xx** el cuerpo sigue la forma: `{ "statusCode", "error", "message": string[], "requestId" }` (`ApiExceptionFilter`).
+
 ## Header `X-Store-Id` (obligatorio en casi toda la API)
 
 Salvo la raiz (`GET /`) y **`GET /api/v1/ops/metrics`** (M5: observabilidad sin tienda), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`**. Protege `/ops/metrics` en producción (red interna, API gateway, etc.).

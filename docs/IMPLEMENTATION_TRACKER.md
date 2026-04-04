@@ -82,8 +82,8 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 ### Estado general de avance (actualizar en cada entrega)
 
-- Estado de fase: `Sprint 1` + `M2–M5 MVP (ops/métricas); devoluciones y refinamiento M6`
-- Avance global estimado Fase 1: `~90%` (M5 métricas + job log; pendiente devoluciones, integración FX pesada, dashboards externos)
+- Estado de fase: `Sprint 1` + `M0 parcial (requestId + errores JSON); M3 sync DONE; M2–M5 + devoluciones venta operativas`
+- Avance global estimado Fase 1: `~92%` (pendiente: auth `/ops`, tests integración FX pesados, login, transferencias, dashboards)
 - Ultima actualizacion: `2026-04-03`
 
 ### Implementado vs. pasos a futuro (deuda conocida)
@@ -94,24 +94,24 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 | **Histórico `ServerChangeLog`** | Solo eventos **después** de desplegar la tabla (sin backfill de productos viejos) | Job de rehidratación o snapshot inicial si hace falta |
 | **Ajustes de inventario en `pull`** | No: el POS actualiza stock vía **push** (`INVENTORY_ADJUST`) o **REST** | Opcional: `INVENTORY_*` en pull para auditoría multi-dispositivo |
 | **`reserved` / reservas** | Campo existe; API de ajuste solo valida `quantity - reserved` en salidas | Endpoints de reserva para carrito / pedidos |
-| **Ventas `SALE` / compras `PURCHASE_RECEIVE` en sync** | Implementado: misma transacción que batch + FX + movimientos | Devoluciones / transferencias |
+| **Ventas `SALE` / compras / devoluciones en sync** | `SALE`, `SALE_RETURN`, `PURCHASE_RECEIVE`, `INVENTORY_ADJUST`, `NOOP` | Transferencias; más tests por `opType` en CI |
 | **Multi-moneda** | `StoreFxSnapshotService` + conversión documento→funcional; tests `convert-amount.spec.ts` | Más pares; integración FX crítica (M6) |
 
 ### Estado por modulo
 
-- M0 Fundacion tecnica: `IN_PROGRESS`
+- M0 Fundacion tecnica: `IN_PROGRESS` (errores JSON + `X-Request-Id` listos; sin envoltorio global en respuestas 2xx)
 - M1 Products + Outbox + Mongo Projection: `DONE` (MVP API + proyección)
 - M2 Inventory base: `DONE` (API ajustes + lectura; sin reservas avanzadas)
-- M3 Sync offline POS: `IN_PROGRESS` (push/pull + `INVENTORY_ADJUST` + `SALE` + `PURCHASE_RECEIVE`)
+- M3 Sync offline POS: `DONE` (push/pull + ops implementadas; tests unitarios `NOOP` / `INVENTORY_ADJUST` / `unknown_op_type` en `sync.service.spec.ts`)
 - M4 Sales integradas: `DONE`
 - M5 Reconciliacion y observabilidad: `DONE` (MVP: `OpsModule`, métricas REST, scheduler + logs)
 - M6 Multi-moneda (dominio + API): `IN_PROGRESS` (schema + docs; servicios y pruebas pendientes)
 
 ### M0 - Fundacion tecnica
-- [ ] Definir `api/v1` estandar de respuestas/errores.
+- [x] Estándar **errores** JSON bajo `api/v1`: `{ statusCode, error, message[], requestId }` vía `ApiExceptionFilter` (`src/common/filters/api-exception.filter.ts`). Respuestas **2xx** siguen siendo el cuerpo del recurso (sin envoltorio global); cabecera `X-Request-Id` en respuestas HTTP.
 - [x] Configurar validacion global (ValidationPipe + transform + whitelist).
 - [x] Log de conexion a bases de datos al arrancar: PostgreSQL (Prisma) y MongoDB opcional (`MONGODB_URI`). (ver `prisma.service.ts`, `mongo.service.ts`)
-- [ ] Definir convencion de IDs (`UUID v4`) y trazabilidad (`requestId`, `opId`).
+- [x] **requestId**: middleware asigna/genera UUID; cliente puede enviar `X-Request-Id` (máx. 128 chars). **opId** sigue siendo contrato sync/POS (UUID v4 en DTOs).
 
 ### M1 - Products + Outbox + Mongo Projection (MVP inicial)
 - [x] CRUD de productos en PostgreSQL (base, con soft delete por `active=false`).
@@ -208,6 +208,20 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 
+### Lo que sigue o falta (prioridad razonable)
+
+Checklist vivo; marcar al cerrar cada ítem.
+
+- [ ] **1. Seguridad `/ops/*`** — API key o Bearer + env; opcional allowlist IP (ver § M5 pendiente y `Proximas tareas`).
+- [ ] **2. M6 — Pruebas integración críticas** — FX + offline + no mutación de histórico (más allá de unitarios `convert-amount`, sync mocks, outbox opt-in).
+- [x] **3. M0 — Respuestas / trazabilidad** — Errores JSON unificados + `X-Request-Id` + `requestId` en payload de error (hecho).
+- [x] **4. M3 — Cierre + tests sync** — Módulo marcado DONE; tests `push()` con transacción simulada: `NOOP`, `INVENTORY_ADJUST` aplicado, `unknown_op_type` (`sync.service.spec.ts`).
+- [ ] **5. M2 futuro** — PATCH metadatos línea inventario; API reservas (`reserved`).
+- [ ] **6. Multi-moneda** — Más pares que USD/VES; opción tasa del día en devolución; redondeo fino documentado en servicios.
+- [ ] **7. Sync / producto** — Unificar o aclarar dos `serverVersion` (pull vs push); backfill `ServerChangeLog`; opcional inventario en pull.
+- [ ] **8. Fuera Fase 1** — Devolución compra a proveedor, auth usuarios/login POS, reportería, contabilidad, WebSockets.
+- [ ] **9. Documentación front** — `FRONTEND_INTEGRATION_CONTEXT`: ejemplos JSON por pantalla.
+
 ### Sprint 0 (cerrado)
 
 - [x] DONE - Definir contrato DTO para `sync/push` y `sync/pull`. (ver `docs/api/SYNC_CONTRACTS.md`)
@@ -236,6 +250,8 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - **Devoluciones venta**: `POST/GET /api/v1/sale-returns`, `sync/push` `SALE_RETURN`; migración `SaleReturn` / `SaleReturnLine`. Ver `RETURNS_POLICY.md`, `src/modules/sale-returns/`.
 - [x] DONE - Swagger en `http://localhost:3000/api/docs` (`@nestjs/swagger` + DTOs documentados en sync).
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
+- [x] DONE - **M0 API**: `RequestIdMiddleware`, `ApiExceptionFilter`, Swagger opcional `X-Request-Id`; tests `api-exception.filter.spec.ts`.
+- [x] DONE - **M3 tests sync**: ampliación `sync.service.spec.ts` (`NOOP`, `INVENTORY_ADJUST`, op desconocida).
 
 ### Proximas tareas (sprint 2+)
 
@@ -271,3 +287,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: **Compras + M6 parcial**: `POST/GET purchases`, `sync/push` `PURCHASE_RECEIVE`, `createPurchaseTx` + `IN_PURCHASE`; `StoreFxSnapshotService` extraído de ventas; tests `convert-amount.spec.ts`; DTO `sync/push` incluye `PURCHASE_RECEIVE`.
 - 2026-04-03: **M5**: módulo `ops` con reconciliación inventario vs movimientos (SQL agregado), métricas outbox/sync, job por `setInterval` + umbrales `OUTBOX_*` / desactivación `OPS_SCHEDULER_ENABLED=0`.
 - 2026-04-03: **M6 devoluciones**: `SaleReturn` + `SaleReturnLine`, `IN_RETURN` con COGS desde `OUT_SALE` agregado por venta/producto; FX heredada; `SALE_RETURN` en sync; auth `/ops/*` dejada como backlog explícito.
+- 2026-04-04: **M0 + M3**: errores JSON + `X-Request-Id`; checklist “Lo que sigue o falta” en §5; M3 `DONE`; tests sync por tipo (mock `$transaction`).
