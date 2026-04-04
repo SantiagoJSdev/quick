@@ -1,6 +1,7 @@
 # Contexto de integracion — Backend Quick Market (Mobile / POS / Front)
 
 Documento vivo para alinear UI, app movil y asistentes de codigo con el backend.  
+Incluye **§13–§14**: ejemplos **JSON por pantalla/flujo** y **tabla FX** (pares, snapshots, límites).  
 Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox, Mongo opcional, sync offline).
 
 ## 1) Stack y fuentes de verdad
@@ -121,6 +122,7 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 - `GET /api/v1/sync/pull?since=&limit=` — cambios del servidor desde el último `serverVersion` del **log global** (`ServerChangeLog`): `PRODUCT_CREATED` | `PRODUCT_UPDATED` | `PRODUCT_DEACTIVATED` con `payload: { productId, fields }`. `limit` default 500, max 500. Guardar `toVersion` como siguiente `since`. Solo entran productos **creados/actualizados tras desplegar este log** (histórico previo no se backfildea).
 - Cada operacion lleva `opId` (UUID v4).
 - **Ventas offline** deben incluir bloque **FX** igual que venta online confirmada.
+- **Ejemplos JSON por pantalla + tabla FX:** ver **§13 y §14** al final de este documento.
 
 ## 6) Errores comunes a evitar en front
 
@@ -130,6 +132,7 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
 ## 7) Checklist integracion por pantalla
 
+- [x] Referencia JSON por flujo documentada (§13) y escenarios FX (§14).
 - [ ] Selector moneda documento coherente con `BusinessSettings`.
 - [ ] Pantalla tasa: mostrar fecha efectiva y fuente (BCV / manual).
 - [ ] Ticket: totales en moneda documento; opcional linea “referencia funcional”.
@@ -192,3 +195,350 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 | Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, `OpsAuthGuard`, scheduler) |
 | Errores + requestId M0 | `src/common/filters/api-exception.filter.ts`, `src/common/middleware/request-id.middleware.ts` |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |
+| Ejemplos JSON por pantalla + FX ampliado | §**13** y §**14** (final de este archivo) |
+
+## 13) Ejemplos JSON por pantalla / flujo (referencia front)
+
+Los cuerpos siguen la API real; los UUID y números son **ilustrativos**. Cabeceras típicas: `X-Store-Id: <uuid-tienda>`, `Content-Type: application/json`, opcional `X-Request-Id`.
+
+### 13.1 Error HTTP (formato M0)
+
+`POST` con validación fallida o recurso no encontrado:
+
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": ["quantity must be a positive decimal"],
+  "requestId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```
+
+### 13.2 Pantalla “Enlazar tienda” → validar `GET /stores/:storeId/business-settings`
+
+Respuesta **200** (objeto Prisma serializado; `Decimal` suele ir como string en JSON):
+
+```json
+{
+  "id": "bs-settings-uuid",
+  "storeId": "550e8400-e29b-41d4-a716-446655440001",
+  "functionalCurrencyId": "curr-usd-uuid",
+  "defaultSaleDocCurrencyId": "curr-ves-uuid",
+  "createdAt": "2026-04-01T12:00:00.000Z",
+  "updatedAt": "2026-04-01T12:00:00.000Z",
+  "functionalCurrency": {
+    "id": "curr-usd-uuid",
+    "code": "USD",
+    "name": "Dólar estadounidense",
+    "decimals": 2,
+    "active": true,
+    "createdAt": "2026-03-01T00:00:00.000Z",
+    "updatedAt": "2026-03-01T00:00:00.000Z"
+  },
+  "defaultSaleDocCurrency": {
+    "id": "curr-ves-uuid",
+    "code": "VES",
+    "name": "Bolívar soberano",
+    "decimals": 2,
+    "active": true,
+    "createdAt": "2026-03-01T00:00:00.000Z",
+    "updatedAt": "2026-03-01T00:00:00.000Z"
+  },
+  "store": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "Tienda principal (seed)",
+    "type": "main"
+  }
+}
+```
+
+### 13.3 Pantalla “Tasa del día” → `GET /exchange-rates/latest?baseCurrencyCode=USD&quoteCurrencyCode=VES`
+
+**200:**
+
+```json
+{
+  "id": "rate-uuid",
+  "storeId": "550e8400-e29b-41d4-a716-446655440001",
+  "baseCurrencyCode": "USD",
+  "quoteCurrencyCode": "VES",
+  "rateQuotePerBase": "36.5",
+  "effectiveDate": "2026-04-04",
+  "source": "SEED",
+  "notes": "Ejemplo por tienda (sin tasa global)",
+  "createdAt": "2026-04-04T08:00:00.000Z",
+  "convention": "1 USD = rateQuotePerBase VES"
+}
+```
+
+Misma ruta con **`baseCurrencyCode=EUR&quoteCurrencyCode=USD`** si existe fila en la tienda (ej. seed `SEED_EUR_USD`):
+
+```json
+{
+  "baseCurrencyCode": "EUR",
+  "quoteCurrencyCode": "USD",
+  "rateQuotePerBase": "1.08",
+  "effectiveDate": "2026-04-04",
+  "convention": "1 EUR = rateQuotePerBase USD"
+}
+```
+
+### 13.4 Pantalla “Registrar tasa” (admin) → `POST /exchange-rates`
+
+**Request:**
+
+```json
+{
+  "baseCurrencyCode": "USD",
+  "quoteCurrencyCode": "VES",
+  "rateQuotePerBase": "36.75",
+  "effectiveDate": "2026-04-05",
+  "source": "MANUAL",
+  "notes": "Cierre BCV"
+}
+```
+
+**Response:** objeto `ExchangeRate` creado (incl. `id`, `baseCurrency`, `quoteCurrency` anidados según include de Prisma en el servicio).
+
+### 13.5 Lista catálogo → `GET /products?includeInactive=false&source=auto`
+
+El controlador devuelve el array de productos (forma según `products.service`); ejemplo de **un elemento** típico:
+
+```json
+{
+  "id": "prod-uuid-1",
+  "sku": "SKU-001",
+  "barcode": "7501234567890",
+  "name": "Arroz 1kg",
+  "description": null,
+  "type": "GOODS",
+  "price": "2.50",
+  "cost": "1.80",
+  "currency": "USD",
+  "active": true,
+  "unit": "unidad"
+}
+```
+
+Cabecera respuesta: `X-Catalog-Source: mongo` o `postgres`.
+
+### 13.6 Alta producto → `POST /products`
+
+**Request (mínimo razonable):**
+
+```json
+{
+  "sku": "SKU-NEW-01",
+  "name": "Aceite 1L",
+  "price": "4.99",
+  "cost": "3.50",
+  "currency": "USD"
+}
+```
+
+**Response:** producto creado (incl. `id`, timestamps). Errores comunes: `sku` duplicado → 409/400 según implementación.
+
+### 13.7 Ajuste inventario → `POST /inventory/adjustments`
+
+**Request:**
+
+```json
+{
+  "productId": "prod-uuid-1",
+  "type": "IN_ADJUST",
+  "quantity": "12",
+  "reason": "Inventario físico",
+  "unitCostFunctional": "1.85"
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "applied",
+  "movementId": "mov-uuid"
+}
+```
+
+Idempotencia con el mismo `opId` (opcional en body):
+
+```json
+{
+  "productId": "prod-uuid-1",
+  "type": "OUT_ADJUST",
+  "quantity": "1",
+  "opId": "aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee"
+}
+```
+
+Segunda vez: `{ "status": "skipped" }`.
+
+### 13.8 Lista inventario → `GET /inventory`
+
+Ejemplo de **una línea** (estructura según servicio; incluye producto embebido o join):
+
+```json
+{
+  "id": "inv-line-uuid",
+  "productId": "prod-uuid-1",
+  "storeId": "550e8400-e29b-41d4-a716-446655440001",
+  "quantity": "48",
+  "reserved": "0",
+  "averageUnitCostFunctional": "1.82",
+  "totalCostFunctional": "87.36",
+  "product": {
+    "id": "prod-uuid-1",
+    "sku": "SKU-001",
+    "name": "Arroz 1kg"
+  }
+}
+```
+
+### 13.9 POS / Sprint 2 → `POST /sales`
+
+**Request** (documento en VES, snapshot alineado a fila USD/VES de la tienda):
+
+```json
+{
+  "documentCurrencyCode": "VES",
+  "deviceId": "pos-device-uuid-estable-por-app",
+  "lines": [
+    {
+      "productId": "prod-uuid-1",
+      "quantity": "2",
+      "price": "91.25",
+      "discount": "0"
+    }
+  ],
+  "fxSnapshot": {
+    "baseCurrencyCode": "USD",
+    "quoteCurrencyCode": "VES",
+    "rateQuotePerBase": "36.5",
+    "effectiveDate": "2026-04-04",
+    "fxSource": "POS_OFFLINE"
+  }
+}
+```
+
+Online sin offline: omitir `fxSource` o no usar `POS_OFFLINE`; el servidor contrasta la tasa (±0,5%).
+
+**Response:** venta con `saleLines`, totales `totalDocument`, `totalFunctional`, campos `fx*` en cabecera (Decimal como string).
+
+### 13.10 Compra / recepción → `POST /purchases`
+
+```json
+{
+  "supplierId": "supplier-uuid-del-seed",
+  "documentCurrencyCode": "VES",
+  "lines": [
+    {
+      "productId": "prod-uuid-1",
+      "quantity": "24",
+      "unitCost": "85.00"
+    }
+  ],
+  "fxSnapshot": {
+    "baseCurrencyCode": "USD",
+    "quoteCurrencyCode": "VES",
+    "rateQuotePerBase": "36.5",
+    "effectiveDate": "2026-04-04"
+  }
+}
+```
+
+### 13.11 Devolución → `POST /sale-returns`
+
+**Heredar FX de la venta (defecto):**
+
+```json
+{
+  "originalSaleId": "sale-uuid",
+  "lines": [{ "saleLineId": "sale-line-uuid", "quantity": "1" }]
+}
+```
+
+**Tasa del día en funcional comercial:**
+
+```json
+{
+  "originalSaleId": "sale-uuid",
+  "fxPolicy": "SPOT_ON_RETURN",
+  "fxSnapshot": {
+    "baseCurrencyCode": "USD",
+    "quoteCurrencyCode": "VES",
+    "rateQuotePerBase": "37.0",
+    "effectiveDate": "2026-04-05"
+  },
+  "lines": [{ "saleLineId": "sale-line-uuid", "quantity": "1" }]
+}
+```
+
+### 13.12 Sync → `POST /sync/push`
+
+```json
+{
+  "deviceId": "pos-device-uuid-estable-por-app",
+  "ops": [
+    {
+      "opId": "11111111-2222-4333-8444-555555555555",
+      "opType": "NOOP",
+      "timestamp": "2026-04-04T15:00:00.000Z",
+      "payload": { "ping": true }
+    }
+  ]
+}
+```
+
+**Response:**
+
+```json
+{
+  "serverTime": "2026-04-04T15:00:01.000Z",
+  "acked": [{ "opId": "11111111-2222-4333-8444-555555555555", "serverVersion": 42 }],
+  "skipped": [],
+  "failed": []
+}
+```
+
+`SALE` / `SALE_RETURN` / etc.: ver `docs/api/SYNC_CONTRACTS.md` (misma forma de `fxSnapshot` que REST donde aplique).
+
+### 13.13 Sync → `GET /sync/pull?since=0&limit=50`
+
+**200 (forma lógica):**
+
+```json
+{
+  "serverTime": "2026-04-04T15:01:00.000Z",
+  "fromVersion": 0,
+  "toVersion": 3,
+  "hasMore": false,
+  "ops": [
+    {
+      "serverVersion": 1,
+      "opType": "PRODUCT_UPDATED",
+      "timestamp": "2026-04-04T10:00:00.000Z",
+      "payload": {
+        "productId": "prod-uuid-1",
+        "fields": { "price": "2.60", "name": "Arroz 1kg" }
+      }
+    }
+  ]
+}
+```
+
+---
+
+## 14) Más FX: pares, snapshots y límites
+
+| Escenario | Qué hacer en el front |
+|-----------|------------------------|
+| **Solo USD/VES** | `GET .../latest?baseCurrencyCode=USD&quoteCurrencyCode=VES`; `fxSnapshot` con ese par al confirmar documentos. |
+| **EUR/USD** (u otro par en BD) | Misma ruta cambiando query; el `fxSnapshot` debe usar **exactamente** `baseCurrencyCode` / `quoteCurrencyCode` de la fila `ExchangeRate` de la tienda (no invertir a mano si el servidor guardó otro orden). |
+| **Documento = funcional** | No hace falta par cruzado; el servidor usa tasa identidad. El `fxSnapshot` en cliente puede omitirse o enviarse coherente con doc de dominio. |
+| **Offline POS** | `fxSource: "POS_OFFLINE"` + tasa y fecha usadas en el ticket; par debe existir en tienda. |
+| **Sin par directo** (ej. documento EUR, funcional VES, solo USD/VES y EUR/USD en BD) | No soportado: falta **fila** que una `documentCode` y `functionalCode` (ver `findLatestForDocumentFunctionalPair`). Mostrar error de negocio o cargar tasas antes de confirmar. |
+
+**Conversión solo para UI (preview):** con convención `1 base = rate quote`, importe en documento `D` y funcional `F` según códigos; implementación de referencia en backend: `convertAmountDocumentToFunctional` (`src/common/fx/convert-amount.ts`).
+
+---

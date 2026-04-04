@@ -220,7 +220,7 @@ Checklist vivo; marcar al cerrar cada ítem.
 - [x] **6. Multi-moneda** — Pares por `ExchangeRate` + `findLatestForDocumentFunctionalPair`; `SPOT_ON_RETURN` + `fxSnapshot`; redondeo en `convert-amount` / `SalesService` / `SaleReturnsService`; seed EUR/USD.
 - [ ] **7. Sync / producto** — Unificar o aclarar dos `serverVersion` (pull vs push); backfill `ServerChangeLog`; opcional inventario en pull.
 - [ ] **8. Fuera Fase 1** — Devolución compra a proveedor, auth usuarios/login POS, reportería, contabilidad, WebSockets.
-- [ ] **9. Documentación front** — `FRONTEND_INTEGRATION_CONTEXT`: ejemplos JSON por pantalla.
+- [x] **9. Documentación front** — `FRONTEND_INTEGRATION_CONTEXT`: §13 ejemplos JSON por pantalla/flujo; §14 FX (pares, snapshots, límites).
 
 ### Sprint 0 (cerrado)
 
@@ -259,7 +259,7 @@ Checklist vivo; marcar al cerrar cada ítem.
 ### Proximas tareas (sprint 2+)
 
 - [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
-- [ ] TODO - Completar contexto Front con ejemplos JSON por pantalla; ampliar con más FX.
+- [x] DONE - Contexto Front: §13–§14 en `FRONTEND_INTEGRATION_CONTEXT.md` (JSON por pantalla + tabla FX).
 - [x] DONE (base) - Guía Flutter/Android + Gemini: `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`; índice de copia `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`; `FRONTEND_INTEGRATION_CONTEXT.md` ampliado (multi-dispositivo, seguridad, roadmap sprint, proveedores sin API).
 - [x] DONE - **Auth `/ops/*`**: `OpsAuthGuard`, `OPS_API_KEY`, `OPS_IP_ALLOWLIST`, `TRUST_PROXY`; Swagger + README.
 
@@ -294,3 +294,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-04: **M0 + M3**: errores JSON + `X-Request-Id`; checklist “Lo que sigue o falta” en §5; M3 `DONE`; tests sync por tipo (mock `$transaction`).
 - 2026-04-04: **Checklist 1–2**: `OpsAuthGuard` en `/ops/*`; integración M6 — venta conserva FX tras nueva `ExchangeRate`; sync `SALE` idempotente por `opId`.
 - 2026-04-04: **Multi-moneda (checklist 6)**: `ExchangeRatesService.findLatestForDocumentFunctionalPair`; `StoreFxSnapshotService` sin límite USD/VES; devoluciones `SPOT_ON_RETURN`; documentación redondeo; seed `EUR` + par EUR/USD.
+- 2026-04-04: **Documentación front (checklist 9)**: `FRONTEND_INTEGRATION_CONTEXT.md` §13 (JSON por pantalla: errores, settings, FX, productos, inventario, ventas, compras, devoluciones, sync); §14 (escenarios FX y límites).

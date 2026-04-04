@@ -4,7 +4,7 @@ Copia estos archivos **desde el repo del backend** al **repo de tu app Flutter**
 
 | Origen (backend) | Destino sugerido en Flutter |
 |------------------|-----------------------------|
-| `docs/FRONTEND_INTEGRATION_CONTEXT.md` | `docs/backend/FRONTEND_INTEGRATION_CONTEXT.md` |
+| `docs/FRONTEND_INTEGRATION_CONTEXT.md` | `docs/backend/FRONTEND_INTEGRATION_CONTEXT.md` (incluye §13 JSON por pantalla y §14 FX) |
 | `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md` | `docs/backend/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md` |
 | `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md` | `docs/backend/DOCUMENTOS_A_COPIAR.md` (este índice) |
 | `docs/api/SYNC_CONTRACTS.md` | `docs/backend/SYNC_CONTRACTS.md` |
