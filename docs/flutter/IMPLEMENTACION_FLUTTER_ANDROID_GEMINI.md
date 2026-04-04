@@ -4,6 +4,66 @@ Guía para crear la app desde cero, integrar el backend documentado y usar **IA 
 
 ---
 
+## 0) Primera vez en Android Studio: qué pantalla usar (y qué **no** usar)
+
+### 0.1 “New Project” + “Phone and Tablet” + “Create with AI”
+
+Eso es para una app **nativa Android** (Kotlin / Jetpack Compose) con asistente de Google. **No es tu caso** si vas a hacer la app en **Flutter**.
+
+- **No elijas “Create with AI”** para este proyecto POS si tu stack es Flutter: generaría código Android nativo, no Dart/Flutter, y no coincidiría con esta guía.
+- Lo que necesitas es un **proyecto Flutter**, que se crea por otro menú.
+
+### 0.2 Crear el proyecto Flutter (orden correcto)
+
+1. Abre **Android Studio**.
+2. Si ves la bienvenida con varios botones, mira si aparece **“New Flutter Project”**.  
+   - Si **no** aparece, o en **Settings → Languages & Frameworks** **no** ves la entrada **Flutter** (solo Android SDK, Kotlin, JVM…): el **plugin Flutter** no está instalado en este Android Studio. **File → Settings → Plugins → Marketplace** → busca **Flutter** → **Install** (+ **Dart**) → **Restart IDE**. Después debería aparecer **Languages & Frameworks → Flutter** para poner el SDK (ej. `C:\flutter`).
+3. **File → New → New Flutter Project** (o en la bienvenida **New Flutter Project**).
+
+**Si en vez de eso abriste “New Project” (genérico):** verás lenguajes **Java / Kotlin / Groovy** y sistema de build **IntelliJ / Gradle**. Eso es proyecto **Android nativo**, no Flutter. Pulsa **Cancel**, vuelve al menú y elige explícitamente **New Flutter Project** (no “New Project”).
+
+4. En el asistente **Flutter** deberías ver algo como: ruta del **Flutter SDK**, tipo **Application**, nombre del proyecto, **Organization**, y a veces **Platforms** (Android / iOS / Web / …) en el mismo paso o en el siguiente.  
+   - Si **no** aparece “Platforms”: en versiones recientes solo se genera **Android** por defecto en Windows; es normal. Puedes añadir otras plataformas después con `flutter create . --platforms=android` en la carpeta del proyecto.
+5. **Location:** carpeta donde quieras el repo, ej. `C:\dev\quick_market_pos`.
+6. **Project name:** `quick_market_pos` (sin espacios).
+7. **Organization:** `com.tuempresa.quickmarket` (package id de Android).
+8. **Finish** (o **Next** hasta el final). Espera a `pub get` y análisis.
+
+**Flutter SDK no configurado / error “Flutter SDK is not found in the specified location”:**
+
+1. La ruta debe ser la **carpeta raíz del SDK** (contiene la carpeta `bin` y dentro `flutter.bat` en Windows). **No** uses `...\bin` como SDK path.
+2. En terminal: `where flutter` o `flutter doctor -v` para ver dónde está instalado.
+3. **File → Settings → Languages & Frameworks → Flutter → Flutter SDK path** → elige esa carpeta raíz → **Apply** → **OK**.
+4. Si **Dart SDK path** falla, pon `<flutter_sdk>\bin\cache\dart-sdk`.
+5. Si aún no tienes SDK: descargar stable desde https://docs.flutter.dev/get-started/install/windows , descomprimir ej. `C:\src\flutter`, configurar esa ruta en el IDE y ejecutar `flutter doctor`.
+
+Luego reintenta **New Flutter Project** (o **Generators → Flutter**).
+
+**Alternativa por terminal** (mismo resultado):
+
+```bash
+cd C:\dev
+flutter create quick_market_pos --org com.tuempresa.quickmarket
+```
+
+Luego en Android Studio: **File → Open** → selecciona la carpeta `quick_market_pos`.
+
+### 0.3 Carpeta `docs/backend/` y copiar los Markdown
+
+1. En el **explorador de archivos de Windows**, entra a la raíz de tu proyecto Flutter (donde está `pubspec.yaml`).
+2. Crea: `docs\backend\` (si no existe).
+3. Desde el repo del **backend** Quick Market, copia los archivos listados en **`docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`** dentro de `docs\backend\` (mismos nombres o los sugeridos en esa tabla).
+
+**No “pegas” los `.md` dentro de Android Studio en un cuadro mágico al crear el proyecto.** Los pegas como **archivos en el disco** dentro del proyecto; después la IA los **lee** desde ahí o tú los **adjuntas** al chat.
+
+### 0.4 Comprobar que Flutter corre
+
+1. En Android Studio, arriba elige un **dispositivo** (emulador o teléfono USB con depuración USB).
+2. Clic en el triángulo verde **Run** ▶.
+3. Deberías ver la app de demostración en el dispositivo. Si falla, revisa la pestaña **Run** / **Build** para el error concreto.
+
+---
+
 ## 1) Qué vas a construir (alcance por sprint)
 
 | Sprint | Módulos | Backend hoy |
@@ -18,22 +78,18 @@ Guía para crear la app desde cero, integrar el backend documentado y usar **IA 
 
 ---
 
-## 2) Android Studio + Flutter desde cero
+## 2) Android Studio + Flutter (referencia; creación detallada en §0)
 
-### 2.1 Instalación
+### 2.1 Instalación (ya la tienes si `flutter doctor` está bien)
 
-1. Instala **Android Studio** (última estable) con **Android SDK** y un **emulador** (API 34+ recomendado).
-2. Instala **Flutter SDK** (canal stable): https://docs.flutter.dev/get-started/install/windows  
-3. Ejecuta `flutter doctor` en terminal y resuelve lo que marque en rojo (licencias SDK: `flutter doctor --android-licenses`).
-4. En Android Studio: **Plugins** → instala **Flutter** y **Dart**; reinicia el IDE.
+1. **Android Studio** + **Android SDK** + emulador o dispositivo físico.
+2. **Flutter SDK** (stable): https://docs.flutter.dev/get-started/install/windows  
+3. `flutter doctor` sin errores críticos; `flutter doctor --android-licenses` si pide licencias.
+4. Plugin **Flutter** + **Dart** en Android Studio (§0.2).
 
 ### 2.2 Crear el proyecto
 
-1. **File → New → New Flutter Project** → **Flutter** → Next.  
-2. **Project name:** ej. `quick_market_pos`  
-3. **Organization:** ej. `com.tuempresa.quickmarket`  
-4. **Platforms:** al menos **Android** (iOS opcional).  
-5. **Finish**. Espera a que termine `pub get`.
+Resumido en **§0.2** — siempre **New Flutter Project**, no “New Project” nativo ni “Create with AI” para este POS.
 
 ### 2.3 Configurar Android para red (desarrollo)
 
@@ -73,12 +129,60 @@ lib/
 
 ---
 
-## 3) Cómo usar Gemini (o otro asistente) bien
+## 3) Cómo usar Gemini paso a paso (dónde “pegar” y cómo chatear)
 
-1. **Adjunta o indexa** los `.md` de `docs/backend/` (los que copiaste desde este repo).  
-2. **Prompt base:** “Implementa solo lo descrito en FRONTEND_INTEGRATION_CONTEXT.md; no inventes rutas; si falta un endpoint, dilo y deja TODO.”  
-3. Pide **archivos concretos**: “Genera `lib/core/api/api_client.dart` con baseUrl por `--dart-define` y headers `X-Store-Id`, `Content-Type: application/json`, opcional `X-Request-Id` UUID v4.”  
-4. **Sprint acotado:** “Solo sprint 1: pantallas A, B, C y llamadas GET/POST listadas en la guía.”
+Los documentos **no** van en la pantalla “Create with AI” de un proyecto Android nativo. Van en tu **carpeta del proyecto Flutter** y/o en el **chat de Gemini** (o del asistente que uses).
+
+### 3.1 Dónde viven los documentos (recomendado)
+
+| Ubicación | Qué haces |
+|-----------|-----------|
+| `tu_proyecto_flutter/docs/backend/FRONTEND_INTEGRATION_CONTEXT.md` | Copias desde el repo del backend (tabla en `DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`). |
+| `tu_proyecto_flutter/docs/backend/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md` | Opcional pero útil: misma guía que estás leyendo. |
+| Otros `.md` (`SYNC_CONTRACTS.md`, `MULTI_CURRENCY_ARCHITECTURE.md`, …) | Misma carpeta `docs/backend/` si quieres que la IA tenga el contrato completo. |
+
+Así el proyecto es **autodescriptivo**: cualquier herramienta que indexe el repo (Cursor, GitHub Copilot, etc.) puede verlos. Para **Gemini en el navegador**, los subes o los pegas en cada conversación (ver §3.3).
+
+### 3.2 Gemini / IA **dentro** de Android Studio
+
+Según tu versión y región puede llamarse **Gemini in Android Studio**, **Studio Bot**, **Codey** u otro nombre.
+
+1. Abre el panel del asistente (icono de chat / menú **View → Tool Windows** si aplica).
+2. Si permite **@archivos** o **Add context**: añade `docs/backend/FRONTEND_INTEGRATION_CONTEXT.md` y, si cabe, esta guía.
+3. Si **no** deja adjuntar `.md`, abre el archivo en el editor, **selecciona todo el texto**, copia, y en el primer mensaje pega: *“Esta es la API del backend; obedece solo esto”* + el pegado (o pide “lee el archivo abierto” si el asistente tiene acceso al archivo actual).
+
+**Importante:** el asistente del IDE genera código en el archivo que tengas abierto; pide siempre **archivos Dart concretos** (`lib/core/api/...`) para no mezclar con Kotlin.
+
+### 3.3 Gemini en el **navegador** (Google AI Studio / gemini.google.com)
+
+1. Entra a [Google AI Studio](https://aistudio.google.com/) o a la app **Gemini**.
+2. **Nueva conversación** → si hay opción **Upload file** o **Insertar archivo**, sube `FRONTEND_INTEGRATION_CONTEXT.md` (y si cabe `IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`).
+3. Si no hay subida de archivo: abre el `.md` en el Bloc de notas, copia el contenido y pégalo en el primer mensaje (puede ser largo; Gemini suele aceptar textos grandes).
+4. Segundo mensaje (ejemplo):  
+   *“Con esa API, genera solo el código Dart para `lib/core/api/api_client.dart`: baseUrl por variable de entorno o constante, headers `X-Store-Id` y `Content-Type: application/json`, parseo de errores `{ statusCode, message, requestId }`. No inventes rutas que no estén en el documento.”*
+5. Copia la respuesta al archivo correspondiente en Android Studio y **revísalo** (imports, null-safety, `pubspec`).
+
+### 3.4 Prompt base (cópialo y reutiliza)
+
+```text
+Eres un asistente para una app Flutter POS. Fuente de verdad: el archivo FRONTEND_INTEGRATION_CONTEXT.md (API /api/v1, headers X-Store-Id, multi-moneda, strings para decimales).
+Reglas: no inventes endpoints; si algo no está documentado, di “no existe en API” y deja un TODO.
+Stack: Flutter 3.x, Dart null-safety. Solo archivos bajo lib/.
+```
+
+### 3.5 Orden de trabajo recomendado (primer día)
+
+1. Proyecto Flutter creado (§0) y **Run** ▶ funciona.  
+2. Carpeta `docs/backend/` con al menos **`FRONTEND_INTEGRATION_CONTEXT.md`**.  
+3. Añade en `pubspec.yaml` `http` o `dio` + `shared_preferences`.  
+4. Pide a Gemini el **cliente HTTP mínimo** + **modelo** de respuesta de `GET .../business-settings`.  
+5. Pide una **pantalla** simple: campo UUID tienda + botón “Conectar” que llame a `business-settings` y muestre nombre de tienda y monedas.
+
+### 3.6 Qué no hacer
+
+- No uses **Create with AI** del asistente de **proyecto Android nativo** para este repo Flutter.  
+- No pegues documentación solo en un chat y luego borres el mensaje: **guarda los `.md` en el proyecto** para la siguiente sesión.  
+- No mezcles “inventar” `GET /suppliers`: el contexto dice que **no existe**; la UI de proveedores es local hasta que el backend lo exponga.
 
 ---
 
