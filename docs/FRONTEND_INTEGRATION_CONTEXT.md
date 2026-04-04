@@ -19,8 +19,8 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
 - Productos hoy:
   - `POST /api/v1/products` — crear (genera `OutboxEvent` `PRODUCT_CREATED`).
-  - `GET /api/v1/products` — lista; query `includeInactive=true|false`
-  - `GET /api/v1/products/:id`
+  - `GET /api/v1/products` — lista; `includeInactive=true|false`; lectura **Mongo** `products_read` por defecto con **fallback Postgres** (query `source=auto|mongo|postgres`, default `auto`). Respuesta incluye cabecera `X-Catalog-Source: mongo|postgres`.
+  - `GET /api/v1/products/:id` — mismo criterio de origen; en `auto`, si no hay doc en Mongo se intenta Postgres (retraso del worker).
   - `PATCH /api/v1/products/:id` — actualiza (`PRODUCT_UPDATED`).
   - `DELETE /api/v1/products/:id` — soft delete (`PRODUCT_DEACTIVATED`).
 
@@ -85,6 +85,7 @@ Lineas: cantidad + precio unitario en **moneda documento**; el backend completa 
 
 - Coleccion: `products_read`
 - Documento incluye snapshot de producto para listados; se actualiza por worker desde outbox.
+- La API de listado/detalle de productos usa esta coleccion primero (modo `auto`); el front puede leer `X-Catalog-Source` para saber si la respuesta vino de Mongo o de Postgres.
 - Para mobile: eventualmente exponer `listPrice`, moneda, y **no** usar tasa actual para interpretar ventas ya cerradas.
 
 Especificacion: `docs/api/MONGO_PRODUCTS_READ.md`.
@@ -101,7 +102,7 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
 - Mezclar `number` JS para dinero; preferir **string decimal** en API o biblioteca decimal.
 - Aplicar la tasa del servidor a un ticket ya generado offline con otra tasa (rompe auditoria).
-- Asumir que `GET /products` desde Mongo es contablemente exacto al segundo (es lectura eventual).
+- Asumir que el catalogo desde Mongo es **lectura eventual** respecto a Postgres; con `source=postgres` fuerzas consistencia fuerte a costa de latencia/carga en DB.
 
 ## 7) Checklist integracion por pantalla
 

@@ -57,8 +57,8 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
    - actualiza coleccion `products_read`.
    - marca evento procesado o programa retry.
 4. Lectura para app movil:
-   - endpoint `GET /api/v1/products` con lectura desde Mongo.
-   - fallback temporal a PostgreSQL si Mongo no responde (controlado en backend).
+   - `GET /api/v1/products` y `GET /api/v1/products/:id`: por defecto (`source=auto`) leen `products_read` en Mongo y hacen fallback a PostgreSQL si Mongo no esta disponible o falla la consulta; cabecera de respuesta `X-Catalog-Source: mongo|postgres`.
+   - Query opcional `source=mongo|postgres|auto` para forzar origen (`mongo` sin cliente disponible -> `503`).
 5. Base de sincronizacion offline:
    - contrato definido para `POST /sync/push` y `GET /sync/pull`.
    - manejo idempotente por `opId`.
@@ -106,7 +106,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] Crear tabla `outbox_events` (modelo `OutboxEvent` + migracion aplicada).
 - [x] Publicar eventos de producto dentro de transaccion (`PRODUCT_CREATED|UPDATED|DEACTIVATED`).
 - [x] Worker para proyectar a Mongo (`OutboxMongoWorker` -> coleccion `products_read`, retry/backoff).
-- [ ] Endpoint lectura de productos para mobile.
+- [x] Endpoint lectura de productos para mobile (`GET /products`, `GET /products/:id`: Mongo + fallback Postgres; `?source=`, `X-Catalog-Source`).
 - [ ] Pruebas de consistencia Postgres -> Mongo.
 
 ### M2 - Inventory base
@@ -210,7 +210,7 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Fundacion **multi-moneda** (Venezuela): modelos `Currency`, `ExchangeRate`, `BusinessSettings`; campos FX/duales en ventas/compras/lineas/inventario/movimientos; doc dominio + `FRONTEND_INTEGRATION_CONTEXT.md` + migracion `multi_currency_foundation`. (logica confirmacion compra/venta y tests FX: pendiente M6)
 - [x] DONE - Endpoints `GET /stores/:storeId/business-settings`, `GET /exchange-rates/latest`, `POST /exchange-rates` + `npm run db:seed`.
 - [x] DONE - Guard global `X-Store-Id` (tienda + `BusinessSettings`); tasas solo por tienda; proyeccion Mongo `fx_rates_read` via outbox. Ver `StoreConfiguredGuard`, `FX_RATES_READ.md`.
-- [ ] TODO - Implementar endpoint lectura mobile de productos desde Mongo con fallback a PostgreSQL.
+- [x] DONE - Lectura catalogo: `GET /products` y `GET /products/:id` desde Mongo `products_read` con fallback a Postgres (`source=auto` por defecto); `X-Catalog-Source`; `source=mongo|postgres`.
 - [ ] TODO - Implementar primer corte de `sync/push` con idempotencia por `opId`.
 - [ ] TODO - Implementar Swagger (`/api/docs`) con esquemas, ejemplos y codigos de error por endpoint.
 - [ ] TODO - Crear y versionar coleccion Postman con todos los endpoints vigentes (incluyendo variables de entorno, auth y ejemplos).
@@ -240,4 +240,5 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: Worker `OutboxMongoWorker` consume `OutboxEvent` y hace upsert en Mongo `products_read` (poll configurable, batch, backoff).
 - 2026-04-04: Arquitectura multi-moneda (Venezuela) documentada; schema Prisma extendido (`Currency`, `ExchangeRate`, `BusinessSettings`, campos FX/duales en ventas/compras/inventario/movimientos); `FRONTEND_INTEGRATION_CONTEXT.md` y `MONGO_PRODUCTS_READ` alineados.
 - 2026-04-04: Guard global `X-Store-Id` + tienda con `BusinessSettings`; tasas solo por tienda; outbox proyecta `fx_rates_read` en Mongo; eliminada tasa global en API y variable `EXCHANGE_RATE_REQUIRE_STORE_ID`.
+- 2026-04-03: `GET /api/v1/products` y `GET /api/v1/products/:id` leen primero Mongo (`products_read`) en modo `auto`, con fallback a PostgreSQL; query `source` y cabecera `X-Catalog-Source`.
 

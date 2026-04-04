@@ -7,9 +7,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { CreateProductDto } from './dto/create-product.dto';
-import { ProductsQueryDto } from './dto/products-query.dto';
+import {
+  ProductIdQueryDto,
+  ProductsQueryDto,
+} from './dto/products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
@@ -23,13 +28,32 @@ export class ProductsController {
   }
 
   @Get()
-  findAll(@Query() query: ProductsQueryDto) {
-    return this.productsService.findAll(query.includeInactive);
+  async findAll(
+    @Query() query: ProductsQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const source = query.source ?? 'auto';
+    const { data, readSource } = await this.productsService.findAllCatalog(
+      query.includeInactive ?? false,
+      source,
+    );
+    res.setHeader('X-Catalog-Source', readSource);
+    return data;
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Query() query: ProductIdQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const source = query.source ?? 'auto';
+    const { data, readSource } = await this.productsService.findOneCatalog(
+      id,
+      source,
+    );
+    res.setHeader('X-Catalog-Source', readSource);
+    return data;
   }
 
   @Patch(':id')
