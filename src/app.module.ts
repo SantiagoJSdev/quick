@@ -10,6 +10,7 @@ import { SyncModule } from './modules/sync/sync.module';
 import { BusinessSettingsModule } from './modules/business-settings/business-settings.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { SaleReturnsModule } from './modules/sale-returns/sale-returns.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import { OutboxModule } from './outbox/outbox.module';
@@ -27,6 +28,7 @@ import { PrismaModule } from './prisma/prisma.module';
     InventoryModule,
     SalesModule,
     PurchasesModule,
+    SaleReturnsModule,
     ProductsModule,
     SyncModule,
     OpsModule,

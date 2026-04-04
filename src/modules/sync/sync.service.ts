@@ -10,6 +10,8 @@ import { parseInventoryAdjustPayload } from '../inventory/inventory-sync-payload
 import { InventoryService } from '../inventory/inventory.service';
 import { parsePurchasePayload } from '../purchases/purchase-sync-payload';
 import { PurchasesService } from '../purchases/purchases.service';
+import { parseSaleReturnPayload } from '../sale-returns/sale-return-sync-payload';
+import { SaleReturnsService } from '../sale-returns/sale-returns.service';
 import { parseSalePayload } from '../sales/sale-sync-payload';
 import { SalesService } from '../sales/sales.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
@@ -47,6 +49,7 @@ export class SyncService {
     private readonly inventory: InventoryService,
     private readonly sales: SalesService,
     private readonly purchases: PurchasesService,
+    private readonly saleReturns: SaleReturnsService,
     private readonly storeFx: StoreFxSnapshotService,
   ) {}
 
@@ -651,6 +654,112 @@ export class SyncService {
 
       buckets.acked.push({ opId: op.opId, serverVersion });
       this.logger.debug(`sync/push: PURCHASE_RECEIVE ${op.opId} -> acked`);
+      return;
+    }
+
+    if (op.opType === 'SALE_RETURN') {
+      const remote = parseSaleReturnPayload(
+        op.payload as Record<string, unknown>,
+      );
+      if (!remote) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details:
+            'Invalid saleReturn payload: need saleReturn.storeId, originalSaleId, lines[].saleLineId, quantity (strings)',
+        });
+        return;
+      }
+
+      if (remote.storeId !== storeId) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: 'saleReturn.storeId must match X-Store-Id',
+        });
+        return;
+      }
+
+      const returnDto = {
+        ...remote.dto,
+        opId: op.opId,
+      };
+
+      try {
+        await this.saleReturns.createSaleReturnTx(tx, storeId, returnDto);
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await tx.syncOperation.create({
+            data: {
+              opId: op.opId,
+              storeId,
+              deviceId,
+              opType: op.opType,
+              payload: op.payload as Prisma.InputJsonValue,
+              clientTimestamp: clientTs,
+              status: 'failed',
+              failureReason: 'validation_error',
+            },
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
+
+      await tx.syncOperation.create({
+        data: {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
+        },
+      });
+
+      buckets.acked.push({ opId: op.opId, serverVersion });
+      this.logger.debug(`sync/push: SALE_RETURN ${op.opId} -> acked`);
       return;
     }
 

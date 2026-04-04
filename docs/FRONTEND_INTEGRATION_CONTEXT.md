@@ -42,6 +42,12 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 - `GET /api/v1/purchases/:id` — detalle con líneas y proveedor.
 - Proveedores: el seed crea un `Supplier` por defecto si la tabla está vacía; no hay CRUD de proveedores en API aún (usar seed / admin / Prisma).
 
+**Devoluciones de venta (M6):**
+
+- `POST /api/v1/sale-returns` — `originalSaleId`, `lines[]` con `saleLineId` (`SaleLine.id` de la venta original) y `quantity` (string); opcional `id` (idempotencia). La FX de cabecera se **hereda** de la venta original (`fxPolicy` `INHERIT_ORIGINAL_SALE`). Importes de línea proporcionales a la venta; inventario con `IN_RETURN` al COGS de los `OUT_SALE` de esa venta y producto.
+- `GET /api/v1/sale-returns/:id`
+- Contrato sync: `SALE_RETURN` y `payload.saleReturn` (sin snapshot FX). Detalle: `docs/api/RETURNS_POLICY.md`.
+
 **Configuracion de tienda (moneda funcional, moneda documento por defecto):**
 
 - `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`.  
@@ -110,7 +116,7 @@ Especificacion: `docs/api/MONGO_PRODUCTS_READ.md`.
 
 Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
-- `POST /api/v1/sync/push` — batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `PURCHASE_RECEIVE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
+- `POST /api/v1/sync/push` — batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `SALE_RETURN` | `PURCHASE_RECEIVE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
 - `GET /api/v1/sync/pull?since=&limit=` — cambios del servidor desde el último `serverVersion` del **log global** (`ServerChangeLog`): `PRODUCT_CREATED` | `PRODUCT_UPDATED` | `PRODUCT_DEACTIVATED` con `payload: { productId, fields }`. `limit` default 500, max 500. Guardar `toVersion` como siguiente `since`. Solo entran productos **creados/actualizados tras desplegar este log** (histórico previo no se backfildea).
 - Cada operacion lleva `opId` (UUID v4).
 - **Ventas offline** deben incluir bloque **FX** igual que venta online confirmada.
@@ -143,6 +149,7 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 | Inventario API | `src/modules/inventory/` |
 | Ventas API | `src/modules/sales/` |
 | Compras API | `src/modules/purchases/` |
+| Devoluciones venta | `src/modules/sale-returns/` + `docs/api/RETURNS_POLICY.md` |
 | FX snapshot tienda | `src/modules/exchange-rates/store-fx-snapshot.service.ts` |
 | Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, scheduler) |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |

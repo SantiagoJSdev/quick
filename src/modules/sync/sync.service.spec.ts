@@ -1,5 +1,6 @@
 import type { InventoryService } from '../inventory/inventory.service';
 import type { PurchasesService } from '../purchases/purchases.service';
+import type { SaleReturnsService } from '../sale-returns/sale-returns.service';
 import type { SalesService } from '../sales/sales.service';
 import type { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { SyncService } from './sync.service';
@@ -22,6 +23,10 @@ describe('SyncService', () => {
       createPurchaseTx: jest.fn(),
     } as unknown as PurchasesService;
 
+    const saleReturns = {
+      createSaleReturnTx: jest.fn(),
+    } as unknown as SaleReturnsService;
+
     const storeFx = {
       resolveFxSnapshot: jest.fn(),
     } as unknown as StoreFxSnapshotService;
@@ -31,6 +36,7 @@ describe('SyncService', () => {
       inventory,
       sales,
       purchases,
+      saleReturns,
       storeFx,
     );
     const result = await service.push(

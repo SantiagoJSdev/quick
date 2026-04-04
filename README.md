@@ -117,7 +117,9 @@ Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o
 
 **Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno.
 
-**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`.
+**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`. **Pendiente:** autenticación para `/ops/*` (ver `docs/IMPLEMENTATION_TRACKER.md`).
+
+**Devoluciones (M6)**: `POST /api/v1/sale-returns`, `GET /api/v1/sale-returns/:id`; `sync/push` `SALE_RETURN`. Política y límites: `docs/api/RETURNS_POLICY.md`.
 
 ## Project setup
 

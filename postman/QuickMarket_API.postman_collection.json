@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Quick Market API",
-    "description": "Variables: `baseUrl`, `storeId`, `productId`, `saleId`, `supplierId` (seed o tabla Supplier), `purchaseId`. Header `X-Store-Id` en casi todas las rutas.",
+    "description": "Variables: `baseUrl`, `storeId`, `productId`, `saleId`, `saleLineId` (primera línea de GET /sales/:id), `saleReturnId`, `supplierId`, `purchaseId`. Header `X-Store-Id` en casi todas las rutas.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,7 +10,9 @@
     { "key": "productId", "value": "", "description": "UUID de producto (ej. tras POST /products)" },
     { "key": "saleId", "value": "", "description": "UUID de venta (copiar de POST /sales)" },
     { "key": "supplierId", "value": "", "description": "UUID proveedor (tras npm run db:seed o Prisma Studio)" },
-    { "key": "purchaseId", "value": "", "description": "UUID compra (respuesta POST /purchases)" }
+    { "key": "purchaseId", "value": "", "description": "UUID compra (respuesta POST /purchases)" },
+    { "key": "saleLineId", "value": "", "description": "UUID SaleLine (sale.saleLines[0].id tras GET /sales/:id)" },
+    { "key": "saleReturnId", "value": "", "description": "UUID devolución (POST /sale-returns)" }
   ],
   "item": [
     {
@@ -175,6 +177,37 @@
       ]
     },
     {
+      "name": "Sale returns",
+      "item": [
+        {
+          "name": "POST /api/v1/sale-returns",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originalSaleId\": \"{{saleId}}\",\n  \"lines\": [\n    {\n      \"saleLineId\": \"{{saleLineId}}\",\n      \"quantity\": \"1\"\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/sale-returns",
+            "description": "Tras una venta: GET /sales/{{saleId}} y copia saleLines[0].id → saleLineId. No requiere fxSnapshot (hereda de la venta)."
+          }
+        },
+        {
+          "name": "GET /api/v1/sale-returns/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/sale-returns/{{saleReturnId}}"
+          }
+        }
+      ]
+    },
+    {
       "name": "Purchases",
       "item": [
         {
@@ -308,6 +341,22 @@
             },
             "url": "{{baseUrl}}/api/v1/sync/push",
             "description": "Cambia opId (UUID v4) en cada prueba repetida. Mismo requisito de stock que POST /sales."
+          }
+        },
+        {
+          "name": "POST /api/v1/sync/push (SALE_RETURN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"postman-device-return\",\n  \"ops\": [\n    {\n      \"opId\": \"dddddddd-dddd-4ddd-dddd-dddddddddddd\",\n      \"opType\": \"SALE_RETURN\",\n      \"timestamp\": \"2026-04-04T18:00:00.000Z\",\n      \"payload\": {\n        \"saleReturn\": {\n          \"storeId\": \"{{storeId}}\",\n          \"originalSaleId\": \"{{saleId}}\",\n          \"lines\": [\n            {\n              \"saleLineId\": \"{{saleLineId}}\",\n              \"quantity\": \"1\"\n            }\n          ]\n        }\n      }\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/sync/push",
+            "description": "Requiere venta previa con OUT_SALE; saleLineId de GET /sales/:id. Nuevo opId por prueba."
           }
         },
         {

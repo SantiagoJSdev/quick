@@ -118,6 +118,7 @@ model Product {
   inventoryItems InventoryItem[]
   movements      StockMovement[]
   saleLines      SaleLine[]
+  saleReturnLines SaleReturnLine[]
   purchaseLines  PurchaseLine[]
 
   active         Boolean    @default(true)
@@ -270,6 +271,7 @@ model Store {
   purchases      Purchase[]
   posDevices     POSDevice[]
   sales          Sale[]
+  saleReturns    SaleReturn[]
   businessSettings BusinessSettings?
   exchangeRates    ExchangeRate[]
   storeSyncState   StoreSyncState?
@@ -326,7 +328,55 @@ model Sale {
   totalDocument          Decimal?   @db.Decimal(65, 30)
   totalFunctional        Decimal?   @db.Decimal(65, 30)
 
-  saleLines SaleLine[]
+  saleLines   SaleLine[]
+  saleReturns SaleReturn[] @relation("SaleReturnFromSale")
+}
+
+model SaleReturn {
+  id             String   @id @default(uuid())
+  storeId        String
+  store          Store    @relation(fields: [storeId], references: [id])
+  originalSaleId String
+  originalSale   Sale     @relation("SaleReturnFromSale", fields: [originalSaleId], references: [id])
+
+  status    String   @default("CONFIRMED")
+  total     Decimal  @db.Decimal(65, 30)
+  createdAt DateTime @default(now())
+
+  documentCurrencyCode   String?
+  functionalCurrencyCode String?
+  fxBaseCurrencyCode     String?
+  fxQuoteCurrencyCode    String?
+  fxRateQuotePerBase     Decimal?   @db.Decimal(30, 10)
+  exchangeRateDate       DateTime?  @db.Date
+  fxSource               String?
+  totalDocument          Decimal?   @db.Decimal(65, 30)
+  totalFunctional        Decimal?   @db.Decimal(65, 30)
+  fxPolicy               String?    @db.VarChar(40)
+
+  lines SaleReturnLine[]
+
+  @@index([storeId])
+  @@index([originalSaleId])
+}
+
+model SaleReturnLine {
+  id           String     @id @default(uuid())
+  saleReturnId String
+  saleReturn   SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  saleLineId   String
+  saleLine     SaleLine   @relation(fields: [saleLineId], references: [id])
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id])
+
+  quantity Decimal @db.Decimal(65, 30)
+
+  unitPriceDocument    Decimal? @db.Decimal(65, 30)
+  unitPriceFunctional  Decimal? @db.Decimal(65, 30)
+  lineTotalDocument    Decimal? @db.Decimal(65, 30)
+  lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+
+  @@index([saleLineId])
 }
 
 model SaleLine {
@@ -346,6 +396,8 @@ model SaleLine {
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
   discountDocument     Decimal? @db.Decimal(65, 30)
   discountFunctional   Decimal? @db.Decimal(65, 30)
+
+  saleReturnLines SaleReturnLine[]
 }
 
 model SyncOperation {

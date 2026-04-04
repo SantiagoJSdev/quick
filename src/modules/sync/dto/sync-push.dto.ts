@@ -14,6 +14,7 @@ import {
 
 const SYNC_PUSH_OP_TYPES = [
   'SALE',
+  'SALE_RETURN',
   'PURCHASE_RECEIVE',
   'INVENTORY_ADJUST',
   'NOOP',

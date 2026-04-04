@@ -75,7 +75,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - WebSockets en tiempo real.
 - Reconciliacion automatica completa de inventario por job nocturno.
 - Reporteria avanzada y dashboards.
-- **Devoluciones** y flujos avanzados post confirmación compra/venta (MVP recepción compra + venta con FX ya implementados).
+- **Devolución de compra** a proveedor y flujos contables avanzados (devolución de **venta** con FX heredada ya implementada).
 - Contabilidad completa (mayor, asientos dobles).
 
 ## 3) Roadmap por modulos
@@ -149,13 +149,14 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] Función conversión documento→funcional `convertAmountDocumentToFunctional` + tests unitarios USD/VES (`src/common/fx/convert-amount.spec.ts`).
 - [x] API tasas: `GET /exchange-rates/latest` + `POST /exchange-rates` (solo por tienda; header `X-Store-Id`; outbox -> Mongo `fx_rates_read`).
 - [x] Confirmacion compra/venta MVP: `POST /sales`, `POST /purchases`, `sync/push` `SALE` / `PURCHASE_RECEIVE`; `StoreFxSnapshotService` compartido; idempotencia `opId` por línea + `id` documento.
-- [ ] Devoluciones (politica tasa original vs tasa del dia) + documentar.
+- [x] Devoluciones venta MVP: `SaleReturn` + `IN_RETURN`; política **heredar FX** de venta original; doc `docs/api/RETURNS_POLICY.md`; REST + `sync/push` `SALE_RETURN`. (Futuro: tasa del día en devolución.)
 - [ ] Pruebas integracion criticas (FX + offline + no mutacion historico).
 
 ### M5 - Reconciliacion y observabilidad
 - [x] Job de conciliacion inventario vs movimientos (suma algebraica `StockMovement` IN_* / OUT_* vs `InventoryItem.quantity`; `GET /api/v1/ops/metrics`, query opcional `storeId`).
 - [x] Alertas por desfases y cola outbox acumulada (scheduler configurable: backlog pending, eventos FAILED, `pendingLagSeconds`; umbrales por env).
 - [x] Metricas de lag de sincronizacion (`outbox.pendingLagSeconds`; conteos `SyncOperation` por `status` + `StoreSyncState.serverVersion` por tienda).
+- [ ] **Pendiente (seguridad):** autenticación / token para `GET /api/v1/ops/metrics` (y futuras rutas `/ops/*`); hoy solo documentado como riesgo de exposición en README.
 
 ## 4) Riesgos principales y mitigacion
 
@@ -232,13 +233,15 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Módulo **compras / recepción**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` `PURCHASE_RECEIVE`; `IN_PURCHASE` por línea; seed `Supplier` por defecto. Ver `src/modules/purchases/`.
 - [x] DONE - **FX compartido**: `StoreFxSnapshotService` + `FxSnapshotDto` en `exchange-rates` (ventas/compras/sync).
 - [x] DONE - **M5 observabilidad**: `GET /api/v1/ops/metrics` (reconciliación inventario, outbox, sync); `OpsSchedulerService` (intervalo env, alertas en log). Ver `src/modules/ops/`.
+- [x] DONE - **Devoluciones venta**: `POST/GET /api/v1/sale-returns`, `sync/push` `SALE_RETURN`; migración `SaleReturn` / `SaleReturnLine`. Ver `RETURNS_POLICY.md`, `src/modules/sale-returns/`.
 - [x] DONE - Swagger en `http://localhost:3000/api/docs` (`@nestjs/swagger` + DTOs documentados en sync).
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
 
 ### Proximas tareas (sprint 2+)
 
 - [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
-- [ ] TODO - Completar contexto Front con ejemplos JSON por pantalla; ampliar con devoluciones y más FX.
+- [ ] TODO - Completar contexto Front con ejemplos JSON por pantalla; ampliar con más FX.
+- [ ] TODO - **Auth `/ops/*`**: API key o Bearer (`Authorization`) validado contra env; opcional IP allowlist (documentar en README).
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -267,3 +270,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: **M4 ventas**: `POST/GET sales`, conversión documento→funcional (USD/VES), `sync/push` `SALE` con `createSaleTx` en transacción de batch; movimientos `OUT_SALE` con `opId` por línea; idempotencia por `sale.id` existente en tienda.
 - 2026-04-03: **Compras + M6 parcial**: `POST/GET purchases`, `sync/push` `PURCHASE_RECEIVE`, `createPurchaseTx` + `IN_PURCHASE`; `StoreFxSnapshotService` extraído de ventas; tests `convert-amount.spec.ts`; DTO `sync/push` incluye `PURCHASE_RECEIVE`.
 - 2026-04-03: **M5**: módulo `ops` con reconciliación inventario vs movimientos (SQL agregado), métricas outbox/sync, job por `setInterval` + umbrales `OUTBOX_*` / desactivación `OPS_SCHEDULER_ENABLED=0`.
+- 2026-04-03: **M6 devoluciones**: `SaleReturn` + `SaleReturnLine`, `IN_RETURN` con COGS desde `OUT_SALE` agregado por venta/producto; FX heredada; `SALE_RETURN` en sync; auth `/ops/*` dejada como backlog explícito.

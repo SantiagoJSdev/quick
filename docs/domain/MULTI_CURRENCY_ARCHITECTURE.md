@@ -156,11 +156,11 @@ Para movimientos que afectan valor (compra, ajuste con costo, devolucion):
 
 ### 3.10 Devoluciones
 
-**Opcion A (recomendada MVP):** `Sale` con `status` / `type` = `RETURN` y lineas con cantidades negativas, **mismo snapshot FX** que la venta original (copiar del documento padre) o tasa del dia de devolucion segun politica — **definir una sola politica por producto**.
+**Implementado (backend):** entidad **`SaleReturn`** + **`SaleReturnLine`** con FK a `Sale` / `SaleLine`; política **`INHERIT_ORIGINAL_SALE`** (FX copiada de la venta original). Importe comercial proporcional por línea; inventario **`IN_RETURN`** valorizado al COGS medio de los **`OUT_SALE`** de esa venta y producto. Detalle: **`docs/api/RETURNS_POLICY.md`**.
 
-**Opcion B:** entidad `SaleReturn` con FK `originalSaleId`, lineas con dual currency + `exchangeRateDate` propio.
+**Opcion A (alternativa no usada):** `Sale` con `status` = `RETURN` y lineas negativas.
 
-Invariante: **nunca** recalcular lineas de la venta original; la devolucion es un **nuevo** documento con su propio snapshot o referencia explicita a la tasa de la venta original (campo `linkedSaleId` + `fxInheritedFromSaleId`).
+Invariante: **nunca** recalcular lineas de la venta original; la devolucion es un **nuevo** documento.
 
 ---
 
