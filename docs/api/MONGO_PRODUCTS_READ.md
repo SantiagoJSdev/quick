@@ -154,3 +154,9 @@ Para simplificar la proyección, el `payload` del outbox debe traer un **snapsho
 - Mongo puede estar **eventualmente consistente** (segundos/minutos en fallos).
 - El backend puede tener fallback temporal a PostgreSQL para lecturas críticas si Mongo está caído.
 
+## 6) Multi-moneda (Venezuela)
+
+- El catalogo en Postgres mantiene `price` + `currency` y `cost` en **moneda funcional** (ver `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md`).
+- La proyeccion `products_read` debe exponer al menos `price`, `currency` (o `listPriceCurrency`) para UI; opcionalmente campos de referencia funcional cuando el worker los incluya en el payload outbox (tarea de evolucion).
+- **No** usar la tasa del dia en Mongo para reinterpretar ventas ya cerradas; la tasa vive en el documento de venta/compra en PostgreSQL.
+

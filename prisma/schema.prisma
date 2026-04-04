@@ -30,6 +30,57 @@ enum OutboxStatus {
   FAILED
 }
 
+// --- Multi-moneda (Venezuela / ERP simplificado) ---
+// Reglas: docs/domain/MULTI_CURRENCY_ARCHITECTURE.md
+// Product.cost = costo medio en moneda funcional (semantica documentada).
+
+model Currency {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  decimals  Int      @default(2)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ratesAsBase  ExchangeRate[] @relation("FxBaseCurrency")
+  ratesAsQuote ExchangeRate[] @relation("FxQuoteCurrency")
+
+  businessSettingsFunctional     BusinessSettings[] @relation("SettingsFunctionalCurrency")
+  businessSettingsDefaultSaleDoc BusinessSettings[] @relation("SettingsDefaultSaleDocCurrency")
+}
+
+model ExchangeRate {
+  id              String    @id @default(uuid())
+  storeId         String?
+  store           Store?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  baseCurrencyId  String
+  baseCurrency    Currency  @relation("FxBaseCurrency", fields: [baseCurrencyId], references: [id])
+  quoteCurrencyId String
+  quoteCurrency   Currency  @relation("FxQuoteCurrency", fields: [quoteCurrencyId], references: [id])
+  // 1 base = rateQuotePerBase quote
+  rateQuotePerBase Decimal   @db.Decimal(30, 10)
+  effectiveDate   DateTime  @db.Date
+  source          String    @default("MANUAL")
+  notes           String?
+  createdAt       DateTime  @default(now())
+  createdById     String?
+
+  @@index([storeId, baseCurrencyId, quoteCurrencyId, effectiveDate])
+}
+
+model BusinessSettings {
+  id                       String    @id @default(uuid())
+  storeId                  String    @unique
+  store                    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  functionalCurrencyId     String
+  functionalCurrency       Currency  @relation("SettingsFunctionalCurrency", fields: [functionalCurrencyId], references: [id])
+  defaultSaleDocCurrencyId String?
+  defaultSaleDocCurrency   Currency? @relation("SettingsDefaultSaleDocCurrency", fields: [defaultSaleDocCurrencyId], references: [id])
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -113,6 +164,9 @@ model InventoryItem {
   maxStock       Decimal? @db.Decimal(65, 30)
   locationInStore String?
 
+  averageUnitCostFunctional Decimal @default(0) @db.Decimal(65, 30)
+  totalCostFunctional       Decimal @default(0) @db.Decimal(65, 30)
+
   lastAdjustedAt DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -131,6 +185,9 @@ model StockMovement {
 
   costAtMoment  Decimal?         @db.Decimal(65, 30)
   priceAtMoment Decimal?         @db.Decimal(65, 30)
+
+  unitCostFunctional  Decimal? @db.Decimal(65, 30)
+  totalCostFunctional Decimal? @db.Decimal(65, 30)
 
   referenceId   String?
   reason        String?
@@ -167,6 +224,16 @@ model Purchase {
   dateOrdered  DateTime       @default(now())
   dateReceived DateTime?
 
+  documentCurrencyCode   String?
+  functionalCurrencyCode String?
+  fxBaseCurrencyCode     String?
+  fxQuoteCurrencyCode    String?
+  fxRateQuotePerBase     Decimal?   @db.Decimal(30, 10)
+  exchangeRateDate       DateTime?  @db.Date
+  fxSource               String?
+  totalDocument          Decimal?   @db.Decimal(65, 30)
+  totalFunctional        Decimal?   @db.Decimal(65, 30)
+
   lines        PurchaseLine[]
 
   createdAt    DateTime @default(now())
@@ -184,6 +251,11 @@ model PurchaseLine {
   quantity   Decimal  @db.Decimal(65, 30)
   unitCost   Decimal  @db.Decimal(65, 30)
   totalCost  Decimal  @db.Decimal(65, 30)
+
+  unitCostDocument     Decimal? @db.Decimal(65, 30)
+  unitCostFunctional   Decimal? @db.Decimal(65, 30)
+  lineTotalDocument    Decimal? @db.Decimal(65, 30)
+  lineTotalFunctional  Decimal? @db.Decimal(65, 30)
 }
 
 model Store {
@@ -198,6 +270,8 @@ model Store {
   purchases      Purchase[]
   posDevices     POSDevice[]
   sales          Sale[]
+  businessSettings BusinessSettings?
+  exchangeRates    ExchangeRate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -231,6 +305,16 @@ model Sale {
   status    String
   createdAt DateTime  @default(now())
 
+  documentCurrencyCode   String?
+  functionalCurrencyCode String?
+  fxBaseCurrencyCode     String?
+  fxQuoteCurrencyCode    String?
+  fxRateQuotePerBase     Decimal?   @db.Decimal(30, 10)
+  exchangeRateDate       DateTime?  @db.Date
+  fxSource               String?
+  totalDocument          Decimal?   @db.Decimal(65, 30)
+  totalFunctional        Decimal?   @db.Decimal(65, 30)
+
   saleLines SaleLine[]
 }
 
@@ -244,6 +328,13 @@ model SaleLine {
   price     Decimal  @db.Decimal(65, 30)
   discount  Decimal? @db.Decimal(65, 30)
   total     Decimal? @db.Decimal(65, 30)
+
+  unitPriceDocument    Decimal? @db.Decimal(65, 30)
+  unitPriceFunctional  Decimal? @db.Decimal(65, 30)
+  lineTotalDocument    Decimal? @db.Decimal(65, 30)
+  lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+  discountDocument     Decimal? @db.Decimal(65, 30)
+  discountFunctional   Decimal? @db.Decimal(65, 30)
 }
 
 model SyncOperation {

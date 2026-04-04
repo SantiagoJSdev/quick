@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MongoModule } from './mongo/mongo.module';
 import { ProductsModule } from './modules/products/products.module';
+import { OutboxModule } from './outbox/outbox.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -11,6 +12,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     MongoModule,
+    OutboxModule,
     ProductsModule,
   ],
   controllers: [AppController],

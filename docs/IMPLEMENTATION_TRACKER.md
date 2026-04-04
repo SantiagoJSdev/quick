@@ -34,6 +34,14 @@ Resultado: el POS puede operar sin internet y sincronizar sin duplicar ventas o 
 
 Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
+### Multi-moneda (Venezuela, ERP simplificado)
+
+- Moneda **funcional** por sucursal (`BusinessSettings.functionalCurrencyId`); documentos en USD y/o VES.
+- Cada compra/venta **confirmada** guarda snapshot: `exchangeRateDate`, par base/quote y `fxRateQuotePerBase` (ver dominio).
+- Lineas con importes en **moneda documento** y **moneda funcional**; inventario valorizado solo en funcional.
+- **No** recalcular documentos historicos al cambiar la tasa; offline envia FX en payload (`opId` / idempotencia intactos).
+- Diseno completo: `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md`. Contexto Front: `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
+
 ## 2) Alcance MVP Tecnico - Fase 1
 
 ### Incluye (in scope)
@@ -41,6 +49,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 1. Modulo `products` en PostgreSQL:
    - CRUD base.
    - validaciones minimas (`sku` unico, nombre, precio, estado activo).
+   - semantica: `cost` = costo medio en **moneda funcional**; `price` + `currency` = lista en moneda indicada (ver dominio multi-moneda).
 2. Outbox para `products`:
    - tabla `outbox_events` en PostgreSQL.
    - evento por `PRODUCT_CREATED | PRODUCT_UPDATED | PRODUCT_DEACTIVATED`.
@@ -53,6 +62,10 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 5. Base de sincronizacion offline:
    - contrato definido para `POST /sync/push` y `GET /sync/pull`.
    - manejo idempotente por `opId`.
+6. Fundamentos multi-moneda en Postgres (schema):
+   - `Currency`, `ExchangeRate`, `BusinessSettings`.
+   - campos opcionales FX y duales en `Sale` / `SaleLine`, `Purchase` / `PurchaseLine`.
+   - valorizacion inventario: `InventoryItem.averageUnitCostFunctional`, `totalCostFunctional`; `StockMovement` costos funcionales opcionales.
 
 ### No incluye (out of scope en Fase 1)
 
@@ -61,14 +74,16 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - WebSockets en tiempo real.
 - Reconciliacion automatica completa de inventario por job nocturno.
 - Reporteria avanzada y dashboards.
+- **Servicios** de confirmacion compra/venta con conversion FX end-to-end (schema listo; logica y tests pendientes).
+- Contabilidad completa (mayor, asientos dobles).
 
 ## 3) Roadmap por modulos
 
 ### Estado general de avance (actualizar en cada entrega)
 
-- Estado de fase: `Sprint 1 en progreso`
-- Avance global estimado Fase 1: `45%`
-- Ultima actualizacion: `2026-04-03`
+- Estado de fase: `Sprint 1 en progreso` + `Multi-moneda: fundacion schema OK, servicios pendientes`
+- Avance global estimado Fase 1: `60%` (schema + docs FX; falta negocio venta/compra)
+- Ultima actualizacion: `2026-04-04`
 
 ### Estado por modulo
 
@@ -78,6 +93,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - M3 Sync offline POS: `TODO`
 - M4 Sales integradas: `TODO`
 - M5 Reconciliacion y observabilidad: `TODO`
+- M6 Multi-moneda (dominio + API): `IN_PROGRESS` (schema + docs; servicios y pruebas pendientes)
 
 ### M0 - Fundacion tecnica
 - [ ] Definir `api/v1` estandar de respuestas/errores.
@@ -89,7 +105,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] CRUD de productos en PostgreSQL (base, con soft delete por `active=false`).
 - [x] Crear tabla `outbox_events` (modelo `OutboxEvent` + migracion aplicada).
 - [x] Publicar eventos de producto dentro de transaccion (`PRODUCT_CREATED|UPDATED|DEACTIVATED`).
-- [ ] Worker para proyectar a Mongo.
+- [x] Worker para proyectar a Mongo (`OutboxMongoWorker` -> coleccion `products_read`, retry/backoff).
 - [ ] Endpoint lectura de productos para mobile.
 - [ ] Pruebas de consistencia Postgres -> Mongo.
 
@@ -97,6 +113,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [ ] Endpoints de inventario por tienda.
 - [ ] Ajustes manuales con `StockMovement`.
 - [ ] Reglas atomicas `increment/decrement`.
+- [ ] Valorizacion en moneda funcional (`averageUnitCostFunctional`, `totalCostFunctional`, costeo medio).
 
 ### M3 - Sync offline POS (operativo)
 - [ ] `POST /sync/push` con batch y acuse por op.
@@ -108,6 +125,18 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [ ] Crear venta + lineas en transaccion.
 - [ ] Generar `StockMovement` tipo `OUT_SALE`.
 - [ ] Evitar stock negativo segun politica definida.
+- [ ] Persistir snapshot FX + totales documento/funcional + lineas duales (sync offline respeta payload).
+
+### M6 - Multi-moneda (Venezuela)
+- [x] Modelo datos: `Currency`, `ExchangeRate`, `BusinessSettings` + campos en documentos/inventario/movimientos (migracion `multi_currency_foundation`).
+- [x] Documentacion dominio (flujos, invariantes, DTOs, ejemplos, errores comunes): `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md`.
+- [x] Contexto Front actualizado: `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
+- [ ] Seed inicial `USD` / `VES` + `BusinessSettings` por tienda (o script admin).
+- [ ] Servicio conversion FX puro (tests unitarios: matriz monedas y redondeo).
+- [ ] API tasas del dia (`ExchangeRate` append-only) + lectura para POS.
+- [ ] Confirmacion compra/venta: aplicar reglas §4 dominio + idempotencia `opId`.
+- [ ] Devoluciones (politica tasa original vs tasa del dia) + documentar.
+- [ ] Pruebas integracion criticas (FX + offline + no mutacion historico).
 
 ### M5 - Reconciliacion y observabilidad
 - [ ] Job de conciliacion inventario vs movimientos.
@@ -152,6 +181,14 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
   - limites por batch y reintentos graduales.
   - limpieza de ops `acked` en cliente.
 
+### R6 - Multi-moneda / tasas (Venezuela)
+- Riesgo: mezclar monedas sin snapshot; recalcular ventas con tasa nueva; redondeo con float.
+- Mitigacion:
+  - columnas duales documento/funcional en lineas y cabecera; `exchangeRateDate` + `fx*` inmutables tras confirmar.
+  - `Decimal` en Postgres/Prisma; strings en API donde aplique.
+  - validar payload offline vs servidor con tolerancia documentada.
+  - tasas diarias append-only; auditoria por `createdAt` / `source`.
+
 ## 5) Backlog detallado (tareas accionables)
 
 Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
@@ -169,7 +206,8 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Implementar CRUD `products` con validacion (DTOs, validacion global y soft delete). (ver `src/modules/products/`)
 - [x] DONE - Implementar escritura a outbox en transaccion para `PRODUCT_CREATED|UPDATED|DEACTIVATED`. (ver `products.service.ts` + `product-outbox.payload.ts`)
 - [x] DONE - Logs al arranque: PostgreSQL conectado + MongoDB (conectado, omitido sin URI, o error si URI invalida). (ver `PrismaService`, `MongoService`)
-- [ ] TODO - Implementar worker de proyeccion a Mongo (`products_read`) con retry/backoff.
+- [x] DONE - Implementar worker de proyeccion a Mongo (`products_read`) con retry/backoff. (ver `src/outbox/outbox-mongo.worker.ts`)
+- [x] DONE - Fundacion **multi-moneda** (Venezuela): modelos `Currency`, `ExchangeRate`, `BusinessSettings`; campos FX/duales en ventas/compras/lineas/inventario/movimientos; doc dominio + `FRONTEND_INTEGRATION_CONTEXT.md` + migracion `multi_currency_foundation`. (logica confirmacion compra/venta y tests FX: pendiente M6)
 - [ ] TODO - Implementar endpoint lectura mobile de productos desde Mongo con fallback a PostgreSQL.
 - [ ] TODO - Implementar primer corte de `sync/push` con idempotencia por `opId`.
 - [ ] TODO - Implementar Swagger (`/api/docs`) con esquemas, ejemplos y codigos de error por endpoint.
@@ -177,13 +215,8 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 
 ### Proximas tareas (sprint 2+)
 
-- [ ] TODO - Generar `docs/FRONTEND_INTEGRATION_CONTEXT.md` (ultimo paso de la fase) con:
-  - inventario completo de endpoints (request/response/errores),
-  - flujos funcionales end-to-end (login, products, inventory, sync),
-  - contratos de datos para mobile (tipos y ejemplos reales),
-  - reglas offline (reintentos, estados de sync, idempotencia),
-  - recomendaciones de arquitectura Front (capas, manejo de cache, sincronizacion y manejo de conflictos),
-  - checklist de integracion para que el equipo Front/IA construya componentes alineados con el backend.
+- [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
+- [ ] TODO - Completar contexto Front con inventario exhaustivo de endpoints y ejemplos JSON por pantalla cuando existan modulos `sales`, `purchases`, `fx`.
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -202,4 +235,6 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-03-26: Se establece Outbox Pattern para consistencia Postgres -> Mongo.
 - 2026-04-03: Productos escriben `OutboxEvent` en la misma transaccion que create/update/soft delete.
 - 2026-04-03: Arranque con log explicito de conexion PostgreSQL; Mongo opcional via `MONGODB_URI` con ping y manejo de error sin tumbar la API.
+- 2026-04-03: Worker `OutboxMongoWorker` consume `OutboxEvent` y hace upsert en Mongo `products_read` (poll configurable, batch, backoff).
+- 2026-04-04: Arquitectura multi-moneda (Venezuela) documentada; schema Prisma extendido (`Currency`, `ExchangeRate`, `BusinessSettings`, campos FX/duales en ventas/compras/inventario/movimientos); `FRONTEND_INTEGRATION_CONTEXT.md` y `MONGO_PRODUCTS_READ` alineados.
 
