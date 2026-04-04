@@ -279,7 +279,8 @@ model Store {
   updatedAt DateTime @updatedAt
 }
 
-/// Monotonic `serverVersion` per store (POST /sync/push ack, future /sync/pull).
+/// Monotonic `serverVersion` per store for `POST /sync/push` acks (`acked[].serverVersion`).
+/// `GET /sync/pull` uses `ServerChangeLog.serverVersion` instead (stream global de cambios del servidor).
 model StoreSyncState {
   storeId       String   @id
   store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -389,3 +390,16 @@ model OutboxEvent {
   @@index([aggregateType, aggregateId, createdAt])
   @@index([eventType, createdAt])
 }
+
+/// Append-only log for `GET /sync/pull` (server-originated ops). `serverVersion` is global monotonic.
+/// `storeScopeId` null = visible to every store (shared catalog); set when an event is store-specific later.
+model ServerChangeLog {
+  serverVersion Int      @id @default(autoincrement())
+  createdAt     DateTime @default(now())
+  opType        String
+  payload       Json
+  storeScopeId  String?
+
+  @@index([storeScopeId])
+}
+

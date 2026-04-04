@@ -133,6 +133,12 @@ Traer del servidor los cambios ocurridos desde el ultimo `serverVersion` del dis
 - El cliente aplica `ops` en ese orden y al final guarda `toVersion` como nuevo `lastServerVersion`.
 - Si `hasMore=true`, el cliente hace otro pull con `since=toVersion`.
 
+### Versiones: pull vs push (importante)
+
+- **`/sync/pull`**: el `serverVersion` de cada op viene de la tabla **`ServerChangeLog`** (secuencia global monotona de cambios **originados en el servidor**, p. ej. catálogo).
+- **`/sync/push`** `acked[].serverVersion`**: viene del contador **por tienda** `StoreSyncState` al aceptar una op del dispositivo.
+- Son **dos contadores distintos** en la implementación actual: el POS debe llevar un `lastServerVersion` **solo para pull** (watermark del log del servidor), aparte de lo que use para interpretar acuses de push si lo necesita.
+
 ## Catalogo de `opType` (inicial)
 
 ### Ops que se empujan desde POS al servidor (push)

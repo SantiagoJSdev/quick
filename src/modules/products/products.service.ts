@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import type { ProductReadSource } from './dto/products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { productSyncPullPayload } from './product-pull-payload';
 import {
   buildProductOutboxPayload,
   productOutboxInclude,
@@ -45,6 +46,14 @@ export class ProductsService {
           aggregateId: product.id,
           eventType: 'PRODUCT_CREATED',
           payload: buildProductOutboxPayload(product),
+        },
+      });
+
+      await tx.serverChangeLog.create({
+        data: {
+          opType: 'PRODUCT_CREATED',
+          payload: productSyncPullPayload(product) as Prisma.InputJsonValue,
+          storeScopeId: null,
         },
       });
 
@@ -217,6 +226,14 @@ export class ProductsService {
         },
       });
 
+      await tx.serverChangeLog.create({
+        data: {
+          opType: 'PRODUCT_UPDATED',
+          payload: productSyncPullPayload(product) as Prisma.InputJsonValue,
+          storeScopeId: null,
+        },
+      });
+
       return product;
     });
   }
@@ -240,6 +257,14 @@ export class ProductsService {
           aggregateId: product.id,
           eventType: 'PRODUCT_DEACTIVATED',
           payload: buildProductOutboxPayload(product),
+        },
+      });
+
+      await tx.serverChangeLog.create({
+        data: {
+          opType: 'PRODUCT_DEACTIVATED',
+          payload: productSyncPullPayload(product) as Prisma.InputJsonValue,
+          storeScopeId: null,
         },
       });
 

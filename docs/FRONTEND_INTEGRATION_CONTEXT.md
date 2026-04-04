@@ -94,8 +94,8 @@ Especificacion: `docs/api/MONGO_PRODUCTS_READ.md`.
 
 Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
-- `POST /api/v1/sync/push` — primer corte: batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion`), `skipped` (`already_applied`), `failed` (`not_implemented` para venta/ajuste hasta M2/M4). Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
-- `GET /api/v1/sync/pull` — pendiente.
+- `POST /api/v1/sync/push` — primer corte: batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
+- `GET /api/v1/sync/pull?since=&limit=` — cambios del servidor desde el último `serverVersion` del **log global** (`ServerChangeLog`): `PRODUCT_CREATED` | `PRODUCT_UPDATED` | `PRODUCT_DEACTIVATED` con `payload: { productId, fields }`. `limit` default 500, max 500. Guardar `toVersion` como siguiente `since`. Solo entran productos **creados/actualizados tras desplegar este log** (histórico previo no se backfildea).
 - Cada operacion lleva `opId` (UUID v4).
 - **Ventas offline** deben incluir bloque **FX** igual que venta online confirmada.
 

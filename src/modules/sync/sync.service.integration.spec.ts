@@ -78,4 +78,16 @@ const run = process.env.RUN_INTEGRATION === '1';
     ]);
     expect(second.failed).toHaveLength(0);
   });
+
+  it('pull returns ordered ops and stable shape', async () => {
+    const r = await service.pull(storeId, 0, 50);
+    expect(r.fromVersion).toBe(0);
+    expect(Array.isArray(r.ops)).toBe(true);
+    expect(typeof r.toVersion).toBe('number');
+    expect(r.toVersion).toBeGreaterThanOrEqual(0);
+    expect(typeof r.hasMore).toBe('boolean');
+    for (let i = 1; i < r.ops.length; i++) {
+      expect(r.ops[i].serverVersion).toBeGreaterThan(r.ops[i - 1].serverVersion);
+    }
+  });
 });

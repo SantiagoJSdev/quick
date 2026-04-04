@@ -15,11 +15,64 @@ export type SyncPushResult = {
   failed: { opId: string; reason: string; details?: string }[];
 };
 
+export type SyncPullResult = {
+  serverTime: string;
+  fromVersion: number;
+  toVersion: number;
+  ops: {
+    serverVersion: number;
+    opType: string;
+    timestamp: string;
+    payload: Record<string, unknown>;
+  }[];
+  hasMore: boolean;
+};
+
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Server-originated ops for POS (catalog). `serverVersion` is from `ServerChangeLog` (global),
+   * not the same counter as `acked[].serverVersion` from `/sync/push` (per-store `StoreSyncState`).
+   */
+  async pull(
+    storeId: string,
+    since: number,
+    limit = 500,
+  ): Promise<SyncPullResult> {
+    const take = Math.min(500, Math.max(1, limit));
+    const rows = await this.prisma.serverChangeLog.findMany({
+      where: {
+        serverVersion: { gt: since },
+        OR: [{ storeScopeId: null }, { storeScopeId: storeId }],
+      },
+      orderBy: { serverVersion: 'asc' },
+      take: take + 1,
+    });
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const ops = page.map((r) => ({
+      serverVersion: r.serverVersion,
+      opType: r.opType,
+      timestamp: r.createdAt.toISOString(),
+      payload: r.payload as Record<string, unknown>,
+    }));
+
+    const toVersion =
+      page.length > 0 ? page[page.length - 1].serverVersion : since;
+
+    return {
+      serverTime: new Date().toISOString(),
+      fromVersion: since,
+      toVersion,
+      ops,
+      hasMore,
+    };
+  }
 
   async push(dto: SyncPushDto, storeId: string): Promise<SyncPushResult> {
     const serverTime = new Date().toISOString();

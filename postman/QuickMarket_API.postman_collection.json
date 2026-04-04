@@ -117,6 +117,24 @@
       "name": "Sync",
       "item": [
         {
+          "name": "GET /api/v1/sync/pull",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sync/pull?since=0&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "pull"],
+              "query": [
+                { "key": "since", "value": "0", "description": "Ultimo serverVersion aplicado del log de pull (no el de push ack)" },
+                { "key": "limit", "value": "100" }
+              ]
+            }
+          }
+        },
+        {
           "name": "POST /api/v1/sync/push (NOOP)",
           "request": {
             "method": "POST",

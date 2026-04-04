@@ -117,7 +117,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 ### M3 - Sync offline POS (operativo)
 - [x] `POST /sync/push` primer corte: batch, `acked` / `skipped` / `failed`, idempotencia por `opId`, `NOOP` para pruebas; `SALE` / `INVENTORY_ADJUST` registran `failed` hasta M2/M4.
-- [ ] `GET /sync/pull` por `serverVersion`.
+- [x] `GET /sync/pull?since&limit` — `ServerChangeLog` (version global); productos escriben `PRODUCT_*` en la misma transacción que outbox.
 - [x] Persistencia `SyncOperation` + `StoreSyncState` (version por tienda) + registro `POSDevice`.
 - [x] Tests: unit sync vacio + integracion NOOP (`RUN_INTEGRATION=1`); casos TC completos en `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md` (venta real pendiente M4).
 
@@ -212,6 +212,7 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Guard global `X-Store-Id` (tienda + `BusinessSettings`); tasas solo por tienda; proyeccion Mongo `fx_rates_read` via outbox. Ver `StoreConfiguredGuard`, `FX_RATES_READ.md`.
 - [x] DONE - Lectura catalogo: `GET /products` y `GET /products/:id` desde Mongo `products_read` con fallback a Postgres (`source=auto` por defecto); `X-Catalog-Source`; `source=mongo|postgres`.
 - [x] DONE - `POST /sync/push` + `StoreSyncState` + `SyncOperation` (ver `src/modules/sync/`, `SYNC_CONTRACTS.md`).
+- [x] DONE - `GET /sync/pull` + `ServerChangeLog` + registro `PRODUCT_*` desde `products.service.ts`.
 - [x] DONE - Swagger en `http://localhost:3000/api/docs` (`@nestjs/swagger` + DTOs documentados en sync).
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
 
@@ -242,4 +243,5 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-04: Guard global `X-Store-Id` + tienda con `BusinessSettings`; tasas solo por tienda; outbox proyecta `fx_rates_read` en Mongo; eliminada tasa global en API y variable `EXCHANGE_RATE_REQUIRE_STORE_ID`.
 - 2026-04-03: `GET /api/v1/products` y `GET /api/v1/products/:id` leen primero Mongo (`products_read`) en modo `auto`, con fallback a PostgreSQL; query `source` y cabecera `X-Catalog-Source`.
 - 2026-04-04: `POST /api/v1/sync/push`, modelo `StoreSyncState`, `SyncOperation` ampliado; Swagger `/api/docs`; Postman; tests integracion opcionales `RUN_INTEGRATION=1`.
+- 2026-04-04: `GET /api/v1/sync/pull` + tabla `ServerChangeLog`; productos registran `PRODUCT_*` para pull; documentado desacople de versiones push vs pull.
 
