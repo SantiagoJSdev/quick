@@ -1,6 +1,8 @@
-import type {
-  CreateSaleReturnDto,
-  CreateSaleReturnLineDto,
+import type { FxSnapshotDto } from '../exchange-rates/dto/fx-snapshot.dto';
+import {
+  SALE_RETURN_FX_POLICIES,
+  type CreateSaleReturnDto,
+  type CreateSaleReturnLineDto,
 } from './dto/create-sale-return.dto';
 
 export type ParsedSyncSaleReturnPayload = {
@@ -40,10 +42,40 @@ export function parseSaleReturnPayload(
     lines.push({ saleLineId: L.saleLineId, quantity: L.quantity });
   }
 
+  let fxSnapshot: FxSnapshotDto | undefined;
+  const fx = s.fxSnapshot ?? s.fx;
+  if (typeof fx === 'object' && fx !== null) {
+    const f = fx as Record<string, unknown>;
+    if (
+      typeof f.baseCurrencyCode === 'string' &&
+      typeof f.quoteCurrencyCode === 'string' &&
+      typeof f.rateQuotePerBase === 'string' &&
+      typeof f.effectiveDate === 'string'
+    ) {
+      fxSnapshot = {
+        baseCurrencyCode: f.baseCurrencyCode,
+        quoteCurrencyCode: f.quoteCurrencyCode,
+        rateQuotePerBase: f.rateQuotePerBase,
+        effectiveDate: f.effectiveDate,
+        fxSource: typeof f.fxSource === 'string' ? f.fxSource : undefined,
+      };
+    }
+  }
+
+  let fxPolicy: CreateSaleReturnDto['fxPolicy'];
+  if (typeof s.fxPolicy === 'string') {
+    const p = s.fxPolicy as (typeof SALE_RETURN_FX_POLICIES)[number];
+    if ((SALE_RETURN_FX_POLICIES as readonly string[]).includes(p)) {
+      fxPolicy = p;
+    }
+  }
+
   const dto: CreateSaleReturnDto = {
     id: typeof s.id === 'string' ? s.id : undefined,
     originalSaleId: s.originalSaleId,
     lines,
+    fxPolicy,
+    fxSnapshot,
   };
 
   return { storeId: s.storeId, dto };

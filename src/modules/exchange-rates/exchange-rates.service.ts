@@ -86,6 +86,79 @@ export class ExchangeRatesService {
     };
   }
 
+  /**
+   * Última tasa de la tienda para el par documento/funcional, en cualquier orientación
+   * almacenada (`base/quote` o `quote/base`). Convención devuelta = fila en BD.
+   */
+  async findLatestForDocumentFunctionalPair(params: {
+    storeId: string;
+    documentCode: string;
+    functionalCode: string;
+    effectiveOn?: string;
+  }) {
+    const doc = params.documentCode.toUpperCase();
+    const fun = params.functionalCode.toUpperCase();
+    if (doc === fun) {
+      throw new BadRequestException(
+        'documentCode and functionalCode must differ for an FX pair lookup',
+      );
+    }
+
+    const docCur = await this.prisma.currency.findUnique({
+      where: { code: doc },
+    });
+    const funCur = await this.prisma.currency.findUnique({
+      where: { code: fun },
+    });
+    if (!docCur || !funCur) {
+      throw new NotFoundException('Currency code not found');
+    }
+
+    const asOf = this.utcDateOnlyFromIso(params.effectiveOn);
+
+    const row = await this.prisma.exchangeRate.findFirst({
+      where: {
+        storeId: params.storeId,
+        OR: [
+          {
+            baseCurrencyId: docCur.id,
+            quoteCurrencyId: funCur.id,
+          },
+          {
+            baseCurrencyId: funCur.id,
+            quoteCurrencyId: docCur.id,
+          },
+        ],
+        effectiveDate: { lte: asOf },
+      },
+      orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }],
+      include: { baseCurrency: true, quoteCurrency: true },
+    });
+
+    if (!row) {
+      throw new NotFoundException(
+        'No exchange rate for this store, currency pair and effective date',
+      );
+    }
+
+    return {
+      id: row.id,
+      storeId: row.storeId,
+      baseCurrencyCode: row.baseCurrency.code,
+      quoteCurrencyCode: row.quoteCurrency.code,
+      rateQuotePerBase: row.rateQuotePerBase.toString(),
+      effectiveDate: row.effectiveDate.toISOString().slice(0, 10),
+      source: row.source,
+      notes: row.notes,
+      createdAt: row.createdAt.toISOString(),
+      convention:
+        '1 ' +
+        row.baseCurrency.code +
+        ' = rateQuotePerBase ' +
+        row.quoteCurrency.code,
+    };
+  }
+
   async create(storeId: string, dto: CreateExchangeRateDto) {
     const base = await this.prisma.currency.findUnique({
       where: { code: dto.baseCurrencyCode.toUpperCase() },

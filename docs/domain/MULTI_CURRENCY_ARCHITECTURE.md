@@ -5,7 +5,7 @@ Documento de diseno alineado con: PostgreSQL fuente maestra, proyecciones de lec
 ## 1) Objetivos y principios
 
 1. **Moneda funcional** del negocio: configurable por **sucursal** (`Store`) via `BusinessSettings.functionalCurrencyId` (ej. `USD`).
-2. **Compras y ventas** pueden registrarse en **USD o VES** (u otras monedas catalogadas): es la **moneda del documento**.
+2. **Compras y ventas** pueden registrarse en **cualquier moneda catalogada** (`Currency`) para la que exista par en `ExchangeRate` respecto a la funcional: típicamente **USD / VES / EUR**, etc.
 3. Cada documento **confirmado** guarda **snapshot** de la tasa usada: `exchangeRateDate` + parametros de paridad (no se recalcula al cambiar la tasa del maestro).
 4. Cada linea y el encabezado guardan importes en **dos dimensiones**: moneda del documento y moneda funcional.
 5. **Inventario valorizado** solo en moneda funcional (costo medio y valor total en funcional).
@@ -40,11 +40,15 @@ Implementacion practica (evitar errores):
 - Normalizar a: `amountInQuote = amountInBase * rateQuotePerBase`
 - `amountInBase = amountInQuote / rateQuotePerBase`
 
-Al confirmar un documento, el backend **elige** `base` y `quote` de forma **fija por convencion del negocio** (recomendado: **USD = base**, **VES = quote** cuando el par involucra ambas). El documento almacena:
+Al confirmar un documento (venta, compra, devolución con `SPOT_ON_RETURN`), el backend **resuelve** `base` y `quote` desde la fila de **`ExchangeRate`** de la tienda que cubra el par **moneda documento / moneda funcional** (cualquier orientación almacenada: busca `(doc, fun)` o `(fun, doc)` y usa la convención **tal como está guardada**). Ejemplos habituales: **USD/VES** (1 USD = X VES), **EUR/USD** (1 EUR = X USD). Alta de nuevos pares: `POST /exchange-rates` + monedas en `Currency`. El documento almacena:
 
 - `fxBaseCurrencyCode`, `fxQuoteCurrencyCode`, `fxRateQuotePerBase`, `exchangeRateDate`
 
 y opcionalmente `fxSource` (`BCV`, `MANUAL`, `POS_OFFLINE`, etc.).
+
+**Redondeo:** conversiones en `Decimal` de alta precisión; sin redondeo comercial en servicios (ver `src/common/fx/convert-amount.ts`).
+
+**Devoluciones:** por defecto se **hereda** el snapshot de la venta (`INHERIT_ORIGINAL_SALE`); opcional **`SPOT_ON_RETURN`** recalcula solo el **funcional comercial** con tasa del día; el inventario sigue valorizándose al COGS histórico de la venta.
 
 ---
 
@@ -55,7 +59,7 @@ y opcionalmente `fxSource` (`BCV`, `MANUAL`, `POS_OFFLINE`, etc.).
 | Campo | Tipo | Notas |
 |-------|------|--------|
 | id | UUID | PK |
-| code | string unique | `USD`, `VES` (ISO 4217) |
+| code | string unique | `USD`, `VES`, `EUR`, … (ISO 4217) |
 | name | string | |
 | decimals | int | 2 tipico |
 | active | bool | |

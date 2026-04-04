@@ -174,18 +174,27 @@ Traer del servidor los cambios ocurridos desde el ultimo `serverVersion` del dis
     }
   }
   ```
-  MVP FX: pares USD/VES; con `fxSource: "POS_OFFLINE"` se usa la tasa enviada; en otro caso se contrasta con la tasa de la tienda (tolerancia documentada en código).
-- `SALE_RETURN` — **implementado**: crea `SaleReturn` + líneas referenciando `SaleLine` de la venta original; **no** envía FX nuevo (se hereda de la venta). `IN_RETURN` por línea; `StockMovement.opId` = `{opIdSync}:{saleLineId}`. Ver `docs/api/RETURNS_POLICY.md`. Payload mínimo:
+  FX: cualquier par presente en `ExchangeRate` de la tienda (orientación base/quote como en BD); el snapshot debe usar el **mismo par** que la fila servidor. Con `fxSource: "POS_OFFLINE"` se usa la tasa enviada; si no, tolerancia ±0,5% vs servidor.
+- `SALE_RETURN` — **implementado**: crea `SaleReturn` + líneas referenciando `SaleLine` de la venta original. Por defecto **hereda** FX de la venta; con `fxPolicy: "SPOT_ON_RETURN"` aplica tasa del día al funcional comercial (opcional `fxSnapshot` / `fx`). `IN_RETURN` por línea; `StockMovement.opId` = `{opIdSync}:{saleLineId}`. Ver `docs/api/RETURNS_POLICY.md`. Payload mínimo:
   ```json
   {
     "saleReturn": {
       "id": "<uuid opcional>",
       "storeId": "<uuid tienda>",
       "originalSaleId": "<uuid venta>",
-      "lines": [{ "saleLineId": "<uuid línea venta>", "quantity": "1" }]
+      "lines": [{ "saleLineId": "<uuid línea venta>", "quantity": "1" }],
+      "fxPolicy": "INHERIT_ORIGINAL_SALE",
+      "fxSnapshot": {
+        "baseCurrencyCode": "USD",
+        "quoteCurrencyCode": "VES",
+        "rateQuotePerBase": "36.50",
+        "effectiveDate": "2026-04-04",
+        "fxSource": "POS_OFFLINE"
+      }
     }
   }
   ```
+  `fxPolicy` y `fxSnapshot` son opcionales; solo tienen efecto conjunto para `SPOT_ON_RETURN`.
 - `PURCHASE_RECEIVE` — **implementado**: crea `Purchase` + líneas, entradas de inventario (`IN_PURCHASE`, costo medio funcional actualizado con el costo de la línea en funcional) y snapshot FX en cabecera/líneas. `purchase.storeId` debe coincidir con `X-Store-Id`. Idempotencia de movimientos: `StockMovement.opId` = `{opIdSync}:{productId}` por línea. Si `purchase.id` ya existe en la tienda, se devuelve la compra existente sin duplicar stock. Payload en `payload.purchase` (alias `fx` para `fxSnapshot`):
   ```json
   {

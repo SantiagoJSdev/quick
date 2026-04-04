@@ -35,7 +35,7 @@ export class SaleReturnsController {
   @ApiBody({ type: CreateSaleReturnDto })
   @ApiOkResponse({
     description:
-      'Devolución registrada; FX heredada de la venta; inventario IN_RETURN al COGS de la venta original',
+      'Devolución registrada. Por defecto FX comercial heredada de la venta; con `fxPolicy: SPOT_ON_RETURN` se usa tasa del día en el funcional. Inventario `IN_RETURN` siempre al COGS de la venta original.',
   })
   async create(@Req() req: Request, @Body() dto: CreateSaleReturnDto) {
     const storeId = req.storeContext?.storeId;

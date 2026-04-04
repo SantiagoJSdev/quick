@@ -25,7 +25,11 @@ const run = process.env.RUN_INTEGRATION === '1';
     const storeFx = new StoreFxSnapshotService(exchangeRates);
     const sales = new SalesService(prisma, storeFx, inventory);
     const purchases = new PurchasesService(prisma, storeFx, inventory);
-    const saleReturns = new SaleReturnsService(prisma, inventory);
+    const saleReturns = new SaleReturnsService(
+      prisma,
+      inventory,
+      storeFx,
+    );
     service = new SyncService(
       prisma,
       inventory,

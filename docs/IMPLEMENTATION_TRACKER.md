@@ -95,7 +95,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 | **Ajustes de inventario en `pull`** | No: el POS actualiza stock vía **push** (`INVENTORY_ADJUST`) o **REST** | Opcional: `INVENTORY_*` en pull para auditoría multi-dispositivo |
 | **`reserved` / reservas** | Campo existe; API de ajuste solo valida `quantity - reserved` en salidas | Endpoints de reserva para carrito / pedidos |
 | **Ventas `SALE` / compras / devoluciones en sync** | `SALE`, `SALE_RETURN`, `PURCHASE_RECEIVE`, `INVENTORY_ADJUST`, `NOOP` | Transferencias; más tests por `opType` en CI |
-| **Multi-moneda** | `StoreFxSnapshotService` + conversión; tests unitarios + integración `RUN_INTEGRATION=1` (FX inmutable en venta, `SALE` sync) | Más pares; ampliar integración (compras, devoluciones) |
+| **Multi-moneda** | Pares arbitrarios en `ExchangeRate`; `findLatestForDocumentFunctionalPair`; devolución `SPOT_ON_RETURN`; seed EUR/USD; redondeo documentado en `convert-amount` / servicios | Cross-rates indirectos (cadena de pares); más integración compras/devoluciones |
 
 ### Estado por modulo
 
@@ -149,7 +149,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] Función conversión documento→funcional `convertAmountDocumentToFunctional` + tests unitarios USD/VES (`src/common/fx/convert-amount.spec.ts`).
 - [x] API tasas: `GET /exchange-rates/latest` + `POST /exchange-rates` (solo por tienda; header `X-Store-Id`; outbox -> Mongo `fx_rates_read`).
 - [x] Confirmacion compra/venta MVP: `POST /sales`, `POST /purchases`, `sync/push` `SALE` / `PURCHASE_RECEIVE`; `StoreFxSnapshotService` compartido; idempotencia `opId` por línea + `id` documento.
-- [x] Devoluciones venta MVP: `SaleReturn` + `IN_RETURN`; política **heredar FX** de venta original; doc `docs/api/RETURNS_POLICY.md`; REST + `sync/push` `SALE_RETURN`. (Futuro: tasa del día en devolución.)
+- [x] Devoluciones venta MVP: `SaleReturn` + `IN_RETURN`; políticas `INHERIT_ORIGINAL_SALE` y `SPOT_ON_RETURN` (tasa del día en funcional comercial); doc `docs/api/RETURNS_POLICY.md`; REST + `sync/push` `SALE_RETURN`.
 - [x] Pruebas integración críticas (con `RUN_INTEGRATION=1`): FX **no se reescribe** en ventas ya guardadas al insertar tasa más nueva (`sales-fx-historical.integration.spec.ts`); offline **sync `SALE`** mismo `opId` → `skipped` (`sync.service.integration.spec.ts`). Sigue pendiente ampliar (compras, devoluciones, outbox→Mongo E2E).
 
 ### M5 - Reconciliacion y observabilidad
@@ -217,7 +217,7 @@ Checklist vivo; marcar al cerrar cada ítem.
 - [x] **3. M0 — Respuestas / trazabilidad** — Errores JSON unificados + `X-Request-Id` + `requestId` en payload de error (hecho).
 - [x] **4. M3 — Cierre + tests sync** — Módulo marcado DONE; tests `push()` con transacción simulada: `NOOP`, `INVENTORY_ADJUST` aplicado, `unknown_op_type` (`sync.service.spec.ts`).
 - [ ] **5. M2 futuro** — PATCH metadatos línea inventario; API reservas (`reserved`).
-- [ ] **6. Multi-moneda** — Más pares que USD/VES; opción tasa del día en devolución; redondeo fino documentado en servicios.
+- [x] **6. Multi-moneda** — Pares por `ExchangeRate` + `findLatestForDocumentFunctionalPair`; `SPOT_ON_RETURN` + `fxSnapshot`; redondeo en `convert-amount` / `SalesService` / `SaleReturnsService`; seed EUR/USD.
 - [ ] **7. Sync / producto** — Unificar o aclarar dos `serverVersion` (pull vs push); backfill `ServerChangeLog`; opcional inventario en pull.
 - [ ] **8. Fuera Fase 1** — Devolución compra a proveedor, auth usuarios/login POS, reportería, contabilidad, WebSockets.
 - [ ] **9. Documentación front** — `FRONTEND_INTEGRATION_CONTEXT`: ejemplos JSON por pantalla.
@@ -254,6 +254,7 @@ Checklist vivo; marcar al cerrar cada ítem.
 - [x] DONE - **M3 tests sync**: ampliación `sync.service.spec.ts` (`NOOP`, `INVENTORY_ADJUST`, op desconocida).
 - [x] DONE - **Checklist seguridad `/ops/*`**: `OpsAuthGuard`, env `OPS_*`, tests `ops-auth.guard.spec.ts`.
 - [x] DONE - **Checklist M6 integración**: `sales-fx-historical.integration.spec.ts` + `sync.service.integration.spec.ts` (`SALE` mismo `opId`).
+- [x] DONE - **Checklist multi-moneda (§5.6)**: pares FX genéricos, `SPOT_ON_RETURN`, documentación redondeo, seed EUR/USD.
 
 ### Proximas tareas (sprint 2+)
 
@@ -291,3 +292,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: **M6 devoluciones**: `SaleReturn` + `SaleReturnLine`, `IN_RETURN` con COGS desde `OUT_SALE` agregado por venta/producto; FX heredada; `SALE_RETURN` en sync; auth `/ops/*` dejada como backlog explícito.
 - 2026-04-04: **M0 + M3**: errores JSON + `X-Request-Id`; checklist “Lo que sigue o falta” en §5; M3 `DONE`; tests sync por tipo (mock `$transaction`).
 - 2026-04-04: **Checklist 1–2**: `OpsAuthGuard` en `/ops/*`; integración M6 — venta conserva FX tras nueva `ExchangeRate`; sync `SALE` idempotente por `opId`.
+- 2026-04-04: **Multi-moneda (checklist 6)**: `ExchangeRatesService.findLatestForDocumentFunctionalPair`; `StoreFxSnapshotService` sin límite USD/VES; devoluciones `SPOT_ON_RETURN`; documentación redondeo; seed `EUR` + par EUR/USD.

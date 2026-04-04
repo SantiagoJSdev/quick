@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client';
 /**
  * Convierte un importe expresado en `documentCode` a `functionalCode`
  * usando la paridad 1 `fxBaseCode` = `rateQuotePerBase` `fxQuoteCode`.
+ *
+ * **Redondeo:** todo el cálculo va en `Prisma.Decimal` (equivalente a `decimal.js`):
+ * no hay redondeo comercial intermedio. El resultado se persiste con la escala del
+ * campo en Postgres (`Decimal(65,30)` en líneas / cabeceras). Quien necesite
+ * mostrar 2 decimales en UI debe formatear allí; no se aplica “banker’s rounding” aquí.
  */
 export function convertAmountDocumentToFunctional(
   amountInDocument: Prisma.Decimal,

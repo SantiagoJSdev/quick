@@ -5,15 +5,25 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { convertAmountDocumentToFunctional } from '../../common/fx/convert-amount';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
 import type { CreateSaleReturnDto } from './dto/create-sale-return.dto';
 
+/**
+ * Devoluciones: importes comerciales en documento (proporcionales a la venta).
+ * Funcional comercial: `INHERIT_*` reutiliza la paridad implícita de la venta;
+ * `SPOT_ON_RETURN` aplica `convertAmountDocumentToFunctional` con tasa del día
+ * (sin redondeo intermedio; ver `convert-amount.ts`). COGS de inventario sigue
+ * saliendo de `OUT_SALE` de la venta original (no cambia con SPOT).
+ */
 @Injectable()
 export class SaleReturnsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    private readonly storeFx: StoreFxSnapshotService,
   ) {}
 
   /**
@@ -120,6 +130,24 @@ export class SaleReturnsService {
       );
     }
 
+    const docCode = original.documentCurrencyCode?.trim().toUpperCase();
+    const funCode = original.functionalCurrencyCode?.trim().toUpperCase();
+    if (!docCode || !funCode) {
+      throw new BadRequestException(
+        'La venta original no tiene moneda documento/funcional; no se puede devolver',
+      );
+    }
+
+    const useSpot = dto.fxPolicy === 'SPOT_ON_RETURN';
+    const spotFx = useSpot
+      ? await this.storeFx.resolveFxSnapshot(
+          storeId,
+          docCode,
+          funCode,
+          dto.fxSnapshot,
+        )
+      : null;
+
     const lineById = new Map(original.saleLines.map((l) => [l.id, l]));
     const lineCreates: Prisma.SaleReturnLineCreateWithoutSaleReturnInput[] =
       [];
@@ -158,9 +186,24 @@ export class SaleReturnsService {
       const soldDoc = this.lineSoldDocument(sl);
       const soldFunc = this.lineSoldFunctional(sl);
       const lineTotalDocument = soldDoc.mul(retQty).div(sl.quantity);
-      const lineTotalFunctionalCommercial = soldFunc
-        .mul(retQty)
-        .div(sl.quantity);
+      let lineTotalFunctionalCommercial: Prisma.Decimal;
+      if (useSpot && spotFx) {
+        lineTotalFunctionalCommercial =
+          docCode === funCode
+            ? lineTotalDocument
+            : convertAmountDocumentToFunctional(
+                lineTotalDocument,
+                docCode,
+                funCode,
+                spotFx.fxBaseCurrencyCode,
+                spotFx.fxQuoteCurrencyCode,
+                spotFx.fxRateQuotePerBase,
+              );
+      } else {
+        lineTotalFunctionalCommercial = soldFunc
+          .mul(retQty)
+          .div(sl.quantity);
+      }
       const unitPriceDocument = lineTotalDocument.div(retQty);
       const unitPriceFunctionalCommercial =
         lineTotalFunctionalCommercial.div(retQty);
@@ -204,6 +247,8 @@ export class SaleReturnsService {
       );
     }
 
+    const fxPolicyRow = useSpot ? 'SPOT_ON_RETURN' : 'INHERIT_ORIGINAL_SALE';
+
     return tx.saleReturn.create({
       data: {
         id: returnId,
@@ -213,14 +258,22 @@ export class SaleReturnsService {
         total: totalDoc,
         documentCurrencyCode: original.documentCurrencyCode,
         functionalCurrencyCode: original.functionalCurrencyCode,
-        fxBaseCurrencyCode: original.fxBaseCurrencyCode,
-        fxQuoteCurrencyCode: original.fxQuoteCurrencyCode,
-        fxRateQuotePerBase: original.fxRateQuotePerBase,
-        exchangeRateDate: original.exchangeRateDate,
-        fxSource: original.fxSource,
+        fxBaseCurrencyCode: useSpot
+          ? spotFx!.fxBaseCurrencyCode
+          : original.fxBaseCurrencyCode,
+        fxQuoteCurrencyCode: useSpot
+          ? spotFx!.fxQuoteCurrencyCode
+          : original.fxQuoteCurrencyCode,
+        fxRateQuotePerBase: useSpot
+          ? spotFx!.fxRateQuotePerBase
+          : original.fxRateQuotePerBase,
+        exchangeRateDate: useSpot
+          ? spotFx!.exchangeRateDate
+          : original.exchangeRateDate,
+        fxSource: useSpot ? spotFx!.fxSource : original.fxSource,
         totalDocument: totalDoc,
         totalFunctional: totalFuncCommercial,
-        fxPolicy: 'INHERIT_ORIGINAL_SALE',
+        fxPolicy: fxPolicyRow,
         lines: { create: lineCreates },
       },
       include: {

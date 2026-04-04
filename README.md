@@ -54,7 +54,7 @@ npx prisma generate
 npx prisma migrate dev
 ```
 
-5. (Opcional) Seed: monedas USD/VES, **crea una tienda por defecto si no hay ninguna**, `BusinessSettings`, tasa ejemplo y outbox. Comando correcto:
+5. (Opcional) Seed: monedas **USD / VES / EUR**, **crea una tienda por defecto si no hay ninguna**, `BusinessSettings`, tasas ejemplo **USD/VES** y **EUR/USD** (segundo par) + outbox. Comando correcto:
 
 ```bash
 npm run db:seed

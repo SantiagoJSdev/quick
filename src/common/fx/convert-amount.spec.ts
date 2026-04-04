@@ -55,4 +55,33 @@ describe('convertAmountDocumentToFunctional', () => {
       ),
     ).toThrow(/Unexpected document/);
   });
+
+  /** 1 EUR = 1.08 USD (base EUR, quote USD) */
+  const eurUsd = new Prisma.Decimal('1.08');
+
+  it('converts USD document to EUR functional (base EUR, quote USD)', () => {
+    const usd = new Prisma.Decimal('10.8');
+    const eur = convertAmountDocumentToFunctional(
+      usd,
+      'USD',
+      'EUR',
+      'EUR',
+      'USD',
+      eurUsd,
+    );
+    expect(eur.toString()).toBe('10');
+  });
+
+  it('converts EUR document to USD functional (base EUR, quote USD)', () => {
+    const eur = new Prisma.Decimal('10');
+    const usd = convertAmountDocumentToFunctional(
+      eur,
+      'EUR',
+      'USD',
+      'EUR',
+      'USD',
+      eurUsd,
+    );
+    expect(usd.toString()).toBe('10.8');
+  });
 });

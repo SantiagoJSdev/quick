@@ -12,6 +12,7 @@ import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.serv
 import { InventoryService } from '../inventory/inventory.service';
 import type { CreateSaleDto } from './dto/create-sale.dto';
 
+/** Totales en funcional vía `convertAmountDocumentToFunctional` (Decimal sin redondeo intermedio). */
 @Injectable()
 export class SalesService {
   constructor(

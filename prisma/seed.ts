@@ -21,6 +21,12 @@ async function main() {
     update: { name: 'Bolívar soberano', active: true },
   });
 
+  const eur = await prisma.currency.upsert({
+    where: { code: 'EUR' },
+    create: { code: 'EUR', name: 'Euro', decimals: 2 },
+    update: { name: 'Euro', active: true },
+  });
+
   let stores = await prisma.store.findMany({ take: 10 });
   if (stores.length === 0) {
     const created = await prisma.store.create({
@@ -96,6 +102,48 @@ async function main() {
               effectiveDate: today.toISOString().slice(0, 10),
               source: 'SEED',
               notes: 'Ejemplo por tienda (sin tasa global)',
+            },
+          },
+        },
+      });
+    }
+
+    const eurUsdExists = await prisma.exchangeRate.findFirst({
+      where: {
+        storeId: store.id,
+        baseCurrencyId: eur.id,
+        quoteCurrencyId: usd.id,
+        source: 'SEED_EUR_USD',
+        effectiveDate: today,
+      },
+    });
+    if (!eurUsdExists) {
+      const eurRate = await prisma.exchangeRate.create({
+        data: {
+          storeId: store.id,
+          baseCurrencyId: eur.id,
+          quoteCurrencyId: usd.id,
+          rateQuotePerBase: '1.08',
+          effectiveDate: today,
+          source: 'SEED_EUR_USD',
+          notes: 'Ejemplo segundo par (1 EUR = 1.08 USD); POST /exchange-rates para más pares',
+        },
+      });
+      await prisma.outboxEvent.create({
+        data: {
+          aggregateType: 'ExchangeRate',
+          aggregateId: eurRate.id,
+          eventType: 'EXCHANGE_RATE_UPSERTED',
+          payload: {
+            exchangeRate: {
+              id: eurRate.id,
+              storeId: store.id,
+              baseCurrencyCode: 'EUR',
+              quoteCurrencyCode: 'USD',
+              rateQuotePerBase: '1.08',
+              effectiveDate: today.toISOString().slice(0, 10),
+              source: 'SEED_EUR_USD',
+              notes: eurRate.notes,
             },
           },
         },

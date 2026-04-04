@@ -12,8 +12,9 @@ export type ResolvedFxSnapshot = {
 };
 
 /**
- * Resolución de par FX por tienda (MVP USD/VES) para confirmar ventas/compras.
- * `POS_OFFLINE` usa tasa del cliente; en otro caso se valida contra servidor (±0,5%).
+ * Resuelve par FX por tienda para cualquier par **documento / funcional** que exista
+ * en `ExchangeRate` (orientación base/quote como en BD). Valida snapshot cliente
+ * (±0,5%) salvo `POS_OFFLINE`.
  */
 @Injectable()
 export class StoreFxSnapshotService {
@@ -33,12 +34,6 @@ export class StoreFxSnapshotService {
   ): Promise<ResolvedFxSnapshot> {
     const doc = documentCode.toUpperCase();
     const fun = functionalCode.toUpperCase();
-    const supported = new Set(['USD', 'VES']);
-    if (!supported.has(doc) || !supported.has(fun)) {
-      throw new BadRequestException(
-        'MVP: moneda documento y funcional deben ser USD y/o VES',
-      );
-    }
 
     if (doc === fun) {
       return {
@@ -50,10 +45,10 @@ export class StoreFxSnapshotService {
       };
     }
 
-    const latest = await this.exchangeRates.findLatest({
+    const latest = await this.exchangeRates.findLatestForDocumentFunctionalPair({
       storeId,
-      baseCurrencyCode: 'USD',
-      quoteCurrencyCode: 'VES',
+      documentCode: doc,
+      functionalCode: fun,
       effectiveOn: snapshot?.effectiveDate,
     });
 
@@ -63,12 +58,15 @@ export class StoreFxSnapshotService {
     );
     let fxSource = 'SERVER';
 
+    const serverBase = latest.baseCurrencyCode.toUpperCase();
+    const serverQuote = latest.quoteCurrencyCode.toUpperCase();
+
     if (snapshot) {
       const clientBase = snapshot.baseCurrencyCode.toUpperCase();
       const clientQuote = snapshot.quoteCurrencyCode.toUpperCase();
-      if (clientBase !== 'USD' || clientQuote !== 'VES') {
+      if (clientBase !== serverBase || clientQuote !== serverQuote) {
         throw new BadRequestException(
-          'MVP: snapshot FX debe usar base USD y quote VES',
+          `FX snapshot pair must match server row: ${serverBase}/${serverQuote}`,
         );
       }
       const snapRate = new Prisma.Decimal(snapshot.rateQuotePerBase);
@@ -90,8 +88,8 @@ export class StoreFxSnapshotService {
     }
 
     return {
-      fxBaseCurrencyCode: 'USD',
-      fxQuoteCurrencyCode: 'VES',
+      fxBaseCurrencyCode: serverBase,
+      fxQuoteCurrencyCode: serverQuote,
       fxRateQuotePerBase: rate,
       exchangeRateDate,
       fxSource,

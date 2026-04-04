@@ -45,9 +45,9 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 
 **Devoluciones de venta (M6):**
 
-- `POST /api/v1/sale-returns` — `originalSaleId`, `lines[]` con `saleLineId` (`SaleLine.id` de la venta original) y `quantity` (string); opcional `id` (idempotencia). La FX de cabecera se **hereda** de la venta original (`fxPolicy` `INHERIT_ORIGINAL_SALE`). Importes de línea proporcionales a la venta; inventario con `IN_RETURN` al COGS de los `OUT_SALE` de esa venta y producto.
+- `POST /api/v1/sale-returns` — `originalSaleId`, `lines[]` con `saleLineId` (`SaleLine.id` de la venta original) y `quantity` (string); opcional `id` (idempotencia). Opcional `fxPolicy`: `INHERIT_ORIGINAL_SALE` (defecto) o `SPOT_ON_RETURN` (tasa del día en funcional comercial; opcional `fxSnapshot` como en ventas). Importes en documento proporcionales a la venta; inventario `IN_RETURN` siempre al COGS de los `OUT_SALE` de esa venta y producto.
 - `GET /api/v1/sale-returns/:id`
-- Contrato sync: `SALE_RETURN` y `payload.saleReturn` (sin snapshot FX). Detalle: `docs/api/RETURNS_POLICY.md`.
+- Contrato sync: `SALE_RETURN` y `payload.saleReturn` (opcional `fxPolicy`, `fxSnapshot` / `fx`). Detalle: `docs/api/RETURNS_POLICY.md`.
 
 **Configuracion de tienda (moneda funcional, moneda documento por defecto):**
 
