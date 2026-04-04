@@ -144,7 +144,19 @@ Traer del servidor los cambios ocurridos desde el ultimo `serverVersion` del dis
 ### Ops que se empujan desde POS al servidor (push)
 
 - `SALE` (persistencia en `SyncOperation` con `failed` / `not_implemented` hasta M4; no crea venta aún)
-- `INVENTORY_ADJUST` (igual hasta M2)
+- `INVENTORY_ADJUST` — **implementado**: aplica ajuste en la misma transacción que el batch; `opId` de la op = `StockMovement.opId` (idempotente). Payload mínimo:
+  ```json
+  {
+    "inventoryAdjust": {
+      "productId": "<uuid>",
+      "type": "IN_ADJUST",
+      "quantity": "10",
+      "unitCostFunctional": "2.50",
+      "reason": "conteo"
+    }
+  }
+  ```
+  También se acepta el mismo objeto en la raíz del `payload` (sin `inventoryAdjust`). `type`: `IN_ADJUST` | `OUT_ADJUST`; `quantity` string decimal positivo.
 - `NOOP` — **solo para pruebas de conectividad e idempotencia**: se registra como aplicada, incrementa `serverVersion`, no efecto de negocio
 - (futuro) `PURCHASE_RECEIVE`, `TRANSFER_OUT`, `TRANSFER_IN`
 

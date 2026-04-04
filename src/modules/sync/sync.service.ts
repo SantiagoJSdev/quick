@@ -1,9 +1,13 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { parseInventoryAdjustPayload } from '../inventory/inventory-sync-payload';
+import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { SyncPushDto, SyncPushOpDto } from './dto/sync-push.dto';
 import { stableJsonStringify } from './stable-json';
@@ -32,7 +36,10 @@ export type SyncPullResult = {
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventory: InventoryService,
+  ) {}
 
   /**
    * Server-originated ops for POS (catalog). `serverVersion` is from `ServerChangeLog` (global),
@@ -230,12 +237,103 @@ export class SyncService {
       return;
     }
 
-    if (op.opType === 'SALE' || op.opType === 'INVENTORY_ADJUST') {
+    if (op.opType === 'INVENTORY_ADJUST') {
+      const parsed = parseInventoryAdjustPayload(
+        op.payload as Record<string, unknown>,
+      );
+      if (!parsed) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details:
+            'Invalid inventory payload: use { inventoryAdjust: { productId, type: IN_ADJUST|OUT_ADJUST, quantity (string) } }',
+        });
+        return;
+      }
+
+      let invResult: Awaited<
+        ReturnType<InventoryService['applyAdjustTx']>
+      >;
+      try {
+        invResult = await this.inventory.applyAdjustTx(tx, storeId, {
+          ...parsed,
+          opId: op.opId,
+        });
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await tx.syncOperation.create({
+            data: {
+              opId: op.opId,
+              storeId,
+              deviceId,
+              opType: op.opType,
+              payload: op.payload as Prisma.InputJsonValue,
+              clientTimestamp: clientTs,
+              status: 'failed',
+              failureReason: 'validation_error',
+            },
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      if (invResult.status === 'skipped') {
+        buckets.skipped.push({
+          opId: op.opId,
+          reason: 'already_applied',
+        });
+        return;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
+
+      await tx.syncOperation.create({
+        data: {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
+        },
+      });
+
+      buckets.acked.push({ opId: op.opId, serverVersion });
+      return;
+    }
+
+    if (op.opType === 'SALE') {
       const reason = 'not_implemented';
       const details =
-        op.opType === 'SALE'
-          ? 'Sale application from sync is not implemented yet (M4).'
-          : 'Inventory adjust from sync is not implemented yet (M2).';
+        'Sale application from sync is not implemented yet (M4).';
 
       await tx.syncOperation.create({
         data: {
@@ -251,7 +349,7 @@ export class SyncService {
       });
 
       buckets.failed.push({ opId: op.opId, reason, details });
-      this.logger.debug(`sync/push: ${op.opType} ${op.opId} -> failed (${reason})`);
+      this.logger.debug(`sync/push: SALE ${op.opId} -> failed (${reason})`);
       return;
     }
 

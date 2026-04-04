@@ -66,6 +66,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
    - `Currency`, `ExchangeRate`, `BusinessSettings`.
    - campos opcionales FX y duales en `Sale` / `SaleLine`, `Purchase` / `PurchaseLine`.
    - valorizacion inventario: `InventoryItem.averageUnitCostFunctional`, `totalCostFunctional`; `StockMovement` costos funcionales opcionales.
+7. Inventario por tienda (API M2): lectura de líneas y movimientos, ajustes manuales atómicos, `sync/push` con `INVENTORY_ADJUST`.
 
 ### No incluye (out of scope en Fase 1)
 
@@ -81,16 +82,27 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 ### Estado general de avance (actualizar en cada entrega)
 
-- Estado de fase: `Sprint 1 en progreso` + `Multi-moneda: fundacion schema OK, servicios pendientes`
-- Avance global estimado Fase 1: `60%` (schema + docs FX; falta negocio venta/compra)
+- Estado de fase: `Sprint 1` + `M2 inventario base listo; M4 ventas pendiente`
+- Avance global estimado Fase 1: `~70%` (inventario API + sync adjust; falta venta confirmada end-to-end)
 - Ultima actualizacion: `2026-04-04`
+
+### Implementado vs. pasos a futuro (deuda conocida)
+
+| Tema | Estado hoy | Futuro / deuda |
+|------|------------|----------------|
+| **`/sync/pull` vs `/sync/push` `serverVersion`** | Dos contadores (ver `SYNC_CONTRACTS.md`): pull = `ServerChangeLog`; push ack = `StoreSyncState` por tienda | Opcional: unificar un solo stream de versión para el POS |
+| **Histórico `ServerChangeLog`** | Solo eventos **después** de desplegar la tabla (sin backfill de productos viejos) | Job de rehidratación o snapshot inicial si hace falta |
+| **Ajustes de inventario en `pull`** | No: el POS actualiza stock vía **push** (`INVENTORY_ADJUST`) o **REST** | Opcional: `INVENTORY_*` en pull para auditoría multi-dispositivo |
+| **`reserved` / reservas** | Campo existe; API de ajuste solo valida `quantity - reserved` en salidas | Endpoints de reserva para carrito / pedidos |
+| **Ventas `SALE` en sync** | `failed` hasta M4 | Transacción venta + `OUT_SALE` + FX |
+| **Multi-moneda** | Costo inventario en **moneda funcional**; costo unitario IN explícito o `Product.cost` | Servicio FX puro + tests (M6) |
 
 ### Estado por modulo
 
 - M0 Fundacion tecnica: `IN_PROGRESS`
-- M1 Products + Outbox + Mongo Projection: `IN_PROGRESS`
-- M2 Inventory base: `TODO`
-- M3 Sync offline POS: `TODO`
+- M1 Products + Outbox + Mongo Projection: `DONE` (MVP API + proyección)
+- M2 Inventory base: `DONE` (API ajustes + lectura; sin reservas avanzadas)
+- M3 Sync offline POS: `IN_PROGRESS` (push/pull + `INVENTORY_ADJUST` OK; `SALE` pendiente M4)
 - M4 Sales integradas: `TODO`
 - M5 Reconciliacion y observabilidad: `TODO`
 - M6 Multi-moneda (dominio + API): `IN_PROGRESS` (schema + docs; servicios y pruebas pendientes)
@@ -110,13 +122,15 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] Pruebas minimas: outbox al crear producto + forma del payload para worker (`RUN_INTEGRATION=1`); igualdad estable de payload en sync (`stableJsonStringify`). Paridad documento Mongo tras worker: manual o e2e futuro con app + `MONGODB_URI`.
 
 ### M2 - Inventory base
-- [ ] Endpoints de inventario por tienda.
-- [ ] Ajustes manuales con `StockMovement`.
-- [ ] Reglas atomicas `increment/decrement`.
-- [ ] Valorizacion en moneda funcional (`averageUnitCostFunctional`, `totalCostFunctional`, costeo medio).
+- [x] Endpoints inventario por tienda (header `X-Store-Id`): `GET /inventory`, `GET /inventory/:productId`, `GET /inventory/movements`, `POST /inventory/adjustments`.
+- [x] Ajustes manuales `IN_ADJUST` / `OUT_ADJUST` con `StockMovement` y `opId` opcional (idempotencia).
+- [x] Transacción Prisma atómica por ajuste; no permite stock negativo (`quantity - reserved` en salidas).
+- [x] Valorización moneda funcional: costeo medio en entrada; salida proporcional a `averageUnitCostFunctional`.
+- [ ] Futuro: PATCH metadatos línea (`minStock`, `maxStock`, `locationInStore`); reservas (`reserved`) explícitas vía API.
 
 ### M3 - Sync offline POS (operativo)
-- [x] `POST /sync/push` primer corte: batch, `acked` / `skipped` / `failed`, idempotencia por `opId`, `NOOP` para pruebas; `SALE` / `INVENTORY_ADJUST` registran `failed` hasta M2/M4.
+- [x] `POST /sync/push` primer corte: batch, `acked` / `skipped` / `failed`, idempotencia por `opId`, `NOOP` para pruebas; `SALE` sigue `failed` hasta M4.
+- [x] `INVENTORY_ADJUST` en push: aplica mismo negocio que `POST /inventory/adjustments` (payload `inventoryAdjust` o raíz).
 - [x] `GET /sync/pull?since&limit` — `ServerChangeLog` (version global); productos escriben `PRODUCT_*` en la misma transacción que outbox.
 - [x] Persistencia `SyncOperation` + `StoreSyncState` (version por tienda) + registro `POSDevice`.
 - [x] Tests: unit sync vacio + integracion NOOP (`RUN_INTEGRATION=1`); casos TC completos en `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md` (venta real pendiente M4).
@@ -213,6 +227,7 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Lectura catalogo: `GET /products` y `GET /products/:id` desde Mongo `products_read` con fallback a Postgres (`source=auto` por defecto); `X-Catalog-Source`; `source=mongo|postgres`.
 - [x] DONE - `POST /sync/push` + `StoreSyncState` + `SyncOperation` (ver `src/modules/sync/`, `SYNC_CONTRACTS.md`).
 - [x] DONE - `GET /sync/pull` + `ServerChangeLog` + registro `PRODUCT_*` desde `products.service.ts`.
+- [x] DONE - Módulo `inventory`: lecturas + `POST /inventory/adjustments`; `sync/push` `INVENTORY_ADJUST` enlazado.
 - [x] DONE - Swagger en `http://localhost:3000/api/docs` (`@nestjs/swagger` + DTOs documentados en sync).
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
 
@@ -244,4 +259,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: `GET /api/v1/products` y `GET /api/v1/products/:id` leen primero Mongo (`products_read`) en modo `auto`, con fallback a PostgreSQL; query `source` y cabecera `X-Catalog-Source`.
 - 2026-04-04: `POST /api/v1/sync/push`, modelo `StoreSyncState`, `SyncOperation` ampliado; Swagger `/api/docs`; Postman; tests integracion opcionales `RUN_INTEGRATION=1`.
 - 2026-04-04: `GET /api/v1/sync/pull` + tabla `ServerChangeLog`; productos registran `PRODUCT_*` para pull; documentado desacople de versiones push vs pull.
-
+- 2026-04-04: Tabla **Implementado vs. pasos a futuro** en tracker; **M2 inventario** (`GET/POST inventory`, movimientos, ajustes atómicos, costeo funcional); `sync/push` `INVENTORY_ADJUST` operativo.

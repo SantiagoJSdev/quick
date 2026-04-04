@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncService } from './sync.service';
 
@@ -13,7 +14,8 @@ const run = process.env.RUN_INTEGRATION === '1';
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    service = new SyncService(prisma);
+    const inventory = new InventoryService(prisma);
+    service = new SyncService(prisma, inventory);
 
     const store = await prisma.store.findFirst({
       include: { businessSettings: true },

@@ -24,6 +24,13 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
   - `PATCH /api/v1/products/:id` — actualiza (`PRODUCT_UPDATED`).
   - `DELETE /api/v1/products/:id` — soft delete (`PRODUCT_DEACTIVATED`).
 
+**Inventario por tienda (M2):**
+
+- `GET /api/v1/inventory` — líneas `InventoryItem` de la tienda del header + datos básicos del `product`.
+- `GET /api/v1/inventory/:productId` — una línea; `404` si aún no existe (se crea al primer ajuste).
+- `GET /api/v1/inventory/movements?productId=&limit=` — últimos `StockMovement` (default 100, max 500).
+- `POST /api/v1/inventory/adjustments` — cuerpo: `productId`, `type` `IN_ADJUST`|`OUT_ADJUST`, `quantity` (string > 0), opcional `reason`, `unitCostFunctional` (entrada; si falta usa costo medio actual o `Product.cost`), `opId` (idempotencia). Respuesta `{ status: applied|skipped, movementId? }`.
+
 **Configuracion de tienda (moneda funcional, moneda documento por defecto):**
 
 - `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`.  
@@ -124,4 +131,5 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 | Idempotencia tests | `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md` |
 | Tracker | `docs/IMPLEMENTATION_TRACKER.md` |
 | Productos API | `src/modules/products/` |
+| Inventario API | `src/modules/inventory/` |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |

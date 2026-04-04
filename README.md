@@ -111,6 +111,8 @@ Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o
 
 **`GET /api/v1/sync/pull`**: el POS baja cambios del servidor (catálogo) con `?since=<ultima_version_pull>&limit=500`. Esa versión es la de **`ServerChangeLog`**, no la misma que `acked[].serverVersion` de `sync/push` (ver `docs/api/SYNC_CONTRACTS.md`).
 
+**Inventario**: `GET /api/v1/inventory`, `GET .../movements`, `POST .../adjustments` (ajuste `IN_ADJUST`/`OUT_ADJUST`); ver Swagger y `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
+
 ## Project setup
 
 ```bash

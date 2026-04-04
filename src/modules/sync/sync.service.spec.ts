@@ -1,3 +1,4 @@
+import type { InventoryService } from '../inventory/inventory.service';
 import { SyncService } from './sync.service';
 
 describe('SyncService', () => {
@@ -6,7 +7,11 @@ describe('SyncService', () => {
       $transaction: jest.fn(),
     } as unknown as import('../../prisma/prisma.service').PrismaService;
 
-    const service = new SyncService(prisma);
+    const inventory = {
+      applyAdjustTx: jest.fn(),
+    } as unknown as InventoryService;
+
+    const service = new SyncService(prisma, inventory);
     const result = await service.push(
       { deviceId: 'device-x', ops: [] },
       '00000000-0000-4000-8000-000000000001',

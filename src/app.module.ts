@@ -8,6 +8,7 @@ import { MongoModule } from './mongo/mongo.module';
 import { ProductsModule } from './modules/products/products.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { BusinessSettingsModule } from './modules/business-settings/business-settings.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -20,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module';
     OutboxModule,
     BusinessSettingsModule,
     ExchangeRatesModule,
+    InventoryModule,
     ProductsModule,
     SyncModule,
   ],

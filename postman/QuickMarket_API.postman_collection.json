@@ -6,7 +6,8 @@
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:3000" },
-    { "key": "storeId", "value": "" }
+    { "key": "storeId", "value": "" },
+    { "key": "productId", "value": "", "description": "UUID de producto (ej. tras POST /products)" }
   ],
   "item": [
     {
@@ -56,6 +57,64 @@
               "raw": "{\n  \"sku\": \"SKU-POSTMAN-001\",\n  \"name\": \"Producto demo\",\n  \"price\": \"10.00\",\n  \"cost\": \"5.00\",\n  \"currency\": \"VES\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/products"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "item": [
+        {
+          "name": "GET /api/v1/inventory",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/inventory"
+          }
+        },
+        {
+          "name": "GET /api/v1/inventory/:productId",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/inventory/{{productId}}"
+          }
+        },
+        {
+          "name": "GET /api/v1/inventory/movements",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/movements?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "movements"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "productId", "value": "{{productId}}", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /api/v1/inventory/adjustments (IN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"type\": \"IN_ADJUST\",\n  \"quantity\": \"5\",\n  \"unitCostFunctional\": \"2.00\",\n  \"reason\": \"Postman ingreso\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/inventory/adjustments"
           }
         }
       ]
@@ -132,6 +191,21 @@
                 { "key": "limit", "value": "100" }
               ]
             }
+          }
+        },
+        {
+          "name": "POST /api/v1/sync/push (INVENTORY_ADJUST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"postman-device-inv\",\n  \"ops\": [\n    {\n      \"opId\": \"11111111-2222-4333-8444-555555555555\",\n      \"opType\": \"INVENTORY_ADJUST\",\n      \"timestamp\": \"2026-04-04T15:00:00.000Z\",\n      \"payload\": {\n        \"inventoryAdjust\": {\n          \"productId\": \"{{productId}}\",\n          \"type\": \"IN_ADJUST\",\n          \"quantity\": \"1\",\n          \"unitCostFunctional\": \"1.00\",\n          \"reason\": \"sync test\"\n        }\n      }\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/sync/push"
           }
         },
         {
