@@ -89,6 +89,14 @@ Salvo la ruta raiz (`GET /`), las rutas exigen el header **`X-Store-Id: <uuid-de
 - **`GET /api/v1/stores/:storeId/business-settings`**: el `X-Store-Id` debe coincidir con `:storeId`.
 - **Tasas**: solo por tienda (no hay tasa global `storeId null` en la API actual).
 
+## OpenAPI (Swagger)
+
+Con la API en marcha (`npm run start:dev`): abre **http://localhost:3000/api/docs**. Usa **Authorize** y el esquema de API Key **X-Store-Id** con el UUID de la tienda (el mismo que en Postman).
+
+## Postman
+
+Colección versionada en **postman/QuickMarket_API.postman_collection.json**. Importar en Postman y definir variables **`baseUrl`** (p. ej. `http://localhost:3000`) y **`storeId`** (UUID impreso por `npm run db:seed` o desde Prisma Studio en `Store`).
+
 ## Project setup
 
 ```bash
@@ -120,6 +128,16 @@ $ npm run test:e2e
 # test coverage
 $ npm run test:cov
 ```
+
+**Integración con PostgreSQL** (outbox + `sync/push`): con la base migrada y seed, en PowerShell:
+
+```powershell
+$env:RUN_INTEGRATION='1'; npm run test
+```
+
+En bash: `RUN_INTEGRATION=1 npm run test`. Sin esa variable, los `*.integration.spec.ts` se omiten.
+
+**Prisma en Windows**: si `npx prisma generate` falla con `EPERM` al sustituir `query_engine-windows.dll.node`, detén `npm run start:dev` y vuelve a ejecutar el generate.
 
 ## Deployment
 

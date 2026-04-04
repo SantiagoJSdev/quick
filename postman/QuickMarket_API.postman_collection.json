@@ -1,0 +1,137 @@
+{
+  "info": {
+    "name": "Quick Market API",
+    "description": "Colección base: variables `baseUrl` (ej. http://localhost:3000) y `storeId` (UUID de tienda con BusinessSettings tras seed). Casi todas las rutas requieren header `X-Store-Id: {{storeId}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "storeId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET / (sin X-Store-Id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "GET /api/v1/products",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products?source=auto&includeInactive=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products"],
+              "query": [
+                { "key": "source", "value": "auto" },
+                { "key": "includeInactive", "value": "false" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /api/v1/products",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"SKU-POSTMAN-001\",\n  \"name\": \"Producto demo\",\n  \"price\": \"10.00\",\n  \"cost\": \"5.00\",\n  \"currency\": \"VES\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Business settings",
+      "item": [
+        {
+          "name": "GET /api/v1/stores/:storeId/business-settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/stores/{{storeId}}/business-settings"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Exchange rates",
+      "item": [
+        {
+          "name": "GET /api/v1/exchange-rates/latest",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exchange-rates/latest?baseCurrencyCode=USD&quoteCurrencyCode=VES",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchange-rates", "latest"],
+              "query": [
+                { "key": "baseCurrencyCode", "value": "USD" },
+                { "key": "quoteCurrencyCode", "value": "VES" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /api/v1/exchange-rates",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"baseCurrencyCode\": \"USD\",\n  \"quoteCurrencyCode\": \"VES\",\n  \"rateQuotePerBase\": \"36.50\",\n  \"effectiveDate\": \"2026-04-04\",\n  \"source\": \"MANUAL\",\n  \"notes\": \"Postman\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/exchange-rates"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sync",
+      "item": [
+        {
+          "name": "POST /api/v1/sync/push (NOOP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"postman-device-001\",\n  \"clientTime\": \"2026-04-04T12:00:00.000Z\",\n  \"lastServerVersion\": 0,\n  \"ops\": [\n    {\n      \"opId\": \"9c1b39e8-2f4a-4c17-9a89-8b5e7cb4b9d7\",\n      \"opType\": \"NOOP\",\n      \"timestamp\": \"2026-04-04T11:59:00.000Z\",\n      \"payload\": {}\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/sync/push"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MongoModule } from './mongo/mongo.module';
 import { ProductsModule } from './modules/products/products.module';
+import { SyncModule } from './modules/sync/sync.module';
 import { BusinessSettingsModule } from './modules/business-settings/business-settings.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import { OutboxModule } from './outbox/outbox.module';
@@ -20,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module';
     BusinessSettingsModule,
     ExchangeRatesModule,
     ProductsModule,
+    SyncModule,
   ],
   controllers: [AppController],
   providers: [

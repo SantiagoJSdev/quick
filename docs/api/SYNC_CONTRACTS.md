@@ -137,8 +137,9 @@ Traer del servidor los cambios ocurridos desde el ultimo `serverVersion` del dis
 
 ### Ops que se empujan desde POS al servidor (push)
 
-- `SALE`
-- `INVENTORY_ADJUST`
+- `SALE` (persistencia en `SyncOperation` con `failed` / `not_implemented` hasta M4; no crea venta aún)
+- `INVENTORY_ADJUST` (igual hasta M2)
+- `NOOP` — **solo para pruebas de conectividad e idempotencia**: se registra como aplicada, incrementa `serverVersion`, no efecto de negocio
 - (futuro) `PURCHASE_RECEIVE`, `TRANSFER_OUT`, `TRANSFER_IN`
 
 ### Ops que el servidor entrega a POS (pull)

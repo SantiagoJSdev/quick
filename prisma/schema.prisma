@@ -272,9 +272,19 @@ model Store {
   sales          Sale[]
   businessSettings BusinessSettings?
   exchangeRates    ExchangeRate[]
+  storeSyncState   StoreSyncState?
+  syncOperations   SyncOperation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Monotonic `serverVersion` per store (POST /sync/push ack, future /sync/pull).
+model StoreSyncState {
+  storeId       String   @id
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  serverVersion Int      @default(0)
+  updatedAt     DateTime @updatedAt
 }
 
 model POSDevice {
@@ -338,17 +348,22 @@ model SaleLine {
 }
 
 model SyncOperation {
-  id             String   @id @default(uuid())
-  opId           String?  @unique
-  deviceId       String?
-  device         POSDevice? @relation(fields: [deviceId], references: [deviceId])
-  opType         String
-  payload        Json
-  timestamp      DateTime @default(now())
-  status         String   @default("pending")
-  serverVersion  Int?
+  id              String    @id @default(uuid())
+  opId            String    @unique
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deviceId        String
+  device          POSDevice @relation(fields: [deviceId], references: [deviceId])
+  opType          String
+  payload         Json
+  clientTimestamp DateTime
+  status          String    @default("pending")
+  serverVersion   Int?
   serverAppliedAt DateTime?
-} 
+  failureReason   String?
+
+  @@index([storeId, clientTimestamp])
+}
 
 model OutboxEvent {
   id            String       @id @default(uuid())

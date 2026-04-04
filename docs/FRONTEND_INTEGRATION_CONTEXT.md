@@ -94,7 +94,8 @@ Especificacion: `docs/api/MONGO_PRODUCTS_READ.md`.
 
 Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
-- `POST /api/v1/sync/push` / `GET /api/v1/sync/pull` (implementacion pendiente en parte).
+- `POST /api/v1/sync/push` — primer corte: batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion`), `skipped` (`already_applied`), `failed` (`not_implemented` para venta/ajuste hasta M2/M4). Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
+- `GET /api/v1/sync/pull` — pendiente.
 - Cada operacion lleva `opId` (UUID v4).
 - **Ventas offline** deben incluir bloque **FX** igual que venta online confirmada.
 
