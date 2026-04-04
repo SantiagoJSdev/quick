@@ -8,6 +8,12 @@ import {
 import { Prisma } from '@prisma/client';
 import { parseInventoryAdjustPayload } from '../inventory/inventory-sync-payload';
 import { InventoryService } from '../inventory/inventory.service';
+import { parsePurchasePayload } from '../purchases/purchase-sync-payload';
+import { PurchasesService } from '../purchases/purchases.service';
+import { parseSalePayload } from '../sales/sale-sync-payload';
+import { SalesService } from '../sales/sales.service';
+import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
+import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { SyncPushDto, SyncPushOpDto } from './dto/sync-push.dto';
 import { stableJsonStringify } from './stable-json';
@@ -39,6 +45,9 @@ export class SyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    private readonly sales: SalesService,
+    private readonly purchases: PurchasesService,
+    private readonly storeFx: StoreFxSnapshotService,
   ) {}
 
   /**
@@ -331,9 +340,142 @@ export class SyncService {
     }
 
     if (op.opType === 'SALE') {
-      const reason = 'not_implemented';
-      const details =
-        'Sale application from sync is not implemented yet (M4).';
+      const remote = parseSalePayload(op.payload as Record<string, unknown>);
+      if (!remote) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details:
+            'Invalid sale payload: need sale.storeId, sale.lines[].productId, quantity, price (strings)',
+        });
+        return;
+      }
+
+      if (remote.storeId !== storeId) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: 'sale.storeId must match X-Store-Id',
+        });
+        return;
+      }
+
+      const settings = await this.prisma.businessSettings.findUnique({
+        where: { storeId },
+        include: {
+          functionalCurrency: true,
+          defaultSaleDocCurrency: true,
+        },
+      });
+      if (!settings) {
+        throw new NotFoundException('Business settings not found');
+      }
+      const funcCode = settings.functionalCurrency.code.toUpperCase();
+      const docCode = (
+        remote.dto.documentCurrencyCode ??
+        settings.defaultSaleDocCurrency?.code ??
+        funcCode
+      ).toUpperCase();
+
+      let fx: ResolvedFxSnapshot;
+      try {
+        fx = await this.storeFx.resolveFxSnapshot(
+          storeId,
+          docCode,
+          funcCode,
+          remote.dto.fxSnapshot,
+        );
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await tx.syncOperation.create({
+            data: {
+              opId: op.opId,
+              storeId,
+              deviceId,
+              opType: op.opType,
+              payload: op.payload as Prisma.InputJsonValue,
+              clientTimestamp: clientTs,
+              status: 'failed',
+              failureReason: 'validation_error',
+            },
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const saleDto = {
+        ...remote.dto,
+        opId: op.opId,
+        deviceId: remote.dto.deviceId ?? deviceId,
+      };
+
+      try {
+        await this.sales.createSaleTx(tx, storeId, saleDto, fx);
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await tx.syncOperation.create({
+            data: {
+              opId: op.opId,
+              storeId,
+              deviceId,
+              opType: op.opType,
+              payload: op.payload as Prisma.InputJsonValue,
+              clientTimestamp: clientTs,
+              status: 'failed',
+              failureReason: 'validation_error',
+            },
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
 
       await tx.syncOperation.create({
         data: {
@@ -343,13 +485,172 @@ export class SyncService {
           opType: op.opType,
           payload: op.payload as Prisma.InputJsonValue,
           clientTimestamp: clientTs,
-          status: 'failed',
-          failureReason: reason,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
         },
       });
 
-      buckets.failed.push({ opId: op.opId, reason, details });
-      this.logger.debug(`sync/push: SALE ${op.opId} -> failed (${reason})`);
+      buckets.acked.push({ opId: op.opId, serverVersion });
+      this.logger.debug(`sync/push: SALE ${op.opId} -> acked`);
+      return;
+    }
+
+    if (op.opType === 'PURCHASE_RECEIVE') {
+      const remote = parsePurchasePayload(
+        op.payload as Record<string, unknown>,
+      );
+      if (!remote) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details:
+            'Invalid purchase payload: need purchase.storeId, purchase.supplierId, purchase.lines[].productId, quantity, unitCost (strings)',
+        });
+        return;
+      }
+
+      if (remote.storeId !== storeId) {
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'failed',
+            failureReason: 'validation_error',
+          },
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: 'purchase.storeId must match X-Store-Id',
+        });
+        return;
+      }
+
+      const settings = await this.prisma.businessSettings.findUnique({
+        where: { storeId },
+        include: {
+          functionalCurrency: true,
+          defaultSaleDocCurrency: true,
+        },
+      });
+      if (!settings) {
+        throw new NotFoundException('Business settings not found');
+      }
+      const funcCode = settings.functionalCurrency.code.toUpperCase();
+      const docCode = (
+        remote.dto.documentCurrencyCode ??
+        settings.defaultSaleDocCurrency?.code ??
+        funcCode
+      ).toUpperCase();
+
+      let fx: ResolvedFxSnapshot;
+      try {
+        fx = await this.storeFx.resolveFxSnapshot(
+          storeId,
+          docCode,
+          funcCode,
+          remote.dto.fxSnapshot,
+        );
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await tx.syncOperation.create({
+            data: {
+              opId: op.opId,
+              storeId,
+              deviceId,
+              opType: op.opType,
+              payload: op.payload as Prisma.InputJsonValue,
+              clientTimestamp: clientTs,
+              status: 'failed',
+              failureReason: 'validation_error',
+            },
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const purchaseDto = {
+        ...remote.dto,
+        opId: op.opId,
+      };
+
+      try {
+        await this.purchases.createPurchaseTx(tx, storeId, purchaseDto, fx);
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await tx.syncOperation.create({
+            data: {
+              opId: op.opId,
+              storeId,
+              deviceId,
+              opType: op.opType,
+              payload: op.payload as Prisma.InputJsonValue,
+              clientTimestamp: clientTs,
+              status: 'failed',
+              failureReason: 'validation_error',
+            },
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
+
+      await tx.syncOperation.create({
+        data: {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
+        },
+      });
+
+      buckets.acked.push({ opId: op.opId, serverVersion });
+      this.logger.debug(`sync/push: PURCHASE_RECEIVE ${op.opId} -> acked`);
       return;
     }
 

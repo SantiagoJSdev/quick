@@ -105,13 +105,17 @@ Con la API en marcha (`npm run start:dev`): abre **http://localhost:3000/api/doc
 
 ## Postman: `postman/QuickMarket_API.postman_collection.json`
 
-Es un archivo **colección de Postman** (formato JSON Collection v2.1). **No lo ejecuta Nest**; sirve para **importarlo en Postman** (Import → elegir el archivo) y tener requests de ejemplo (raíz, productos, business-settings, tasas, `sync/push`) con variables **`baseUrl`** y **`storeId`**. Así pruebas la API sin reescribir URLs y headers cada vez; puedes versionarlo en git junto al backend.
+Es un archivo **colección de Postman** (formato JSON Collection v2.1). **No lo ejecuta Nest**; sirve para **importarlo en Postman** (Import → elegir el archivo) y tener requests de ejemplo (raíz, productos, inventario, ventas, **compras**, business-settings, tasas, `sync/push` incl. `SALE` y `PURCHASE_RECEIVE`) con variables **`baseUrl`**, **`storeId`**, **`productId`**, **`saleId`**, **`supplierId`**, **`purchaseId`**. Así pruebas la API sin reescribir URLs y headers cada vez; puedes versionarlo en git junto al backend.
 
 Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o columna `id` en `Store` en Prisma Studio). Para **`sync/push`**, si repites el mismo `opId` que ya se aplicó, la API responderá `skipped`: usa un UUID nuevo por operación de prueba o borra la fila en `SyncOperation` si quieres repetir el mismo id.
 
 **`GET /api/v1/sync/pull`**: el POS baja cambios del servidor (catálogo) con `?since=<ultima_version_pull>&limit=500`. Esa versión es la de **`ServerChangeLog`**, no la misma que `acked[].serverVersion` de `sync/push` (ver `docs/api/SYNC_CONTRACTS.md`).
 
 **Inventario**: `GET /api/v1/inventory`, `GET .../movements`, `POST .../adjustments` (ajuste `IN_ADJUST`/`OUT_ADJUST`); ver Swagger y `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
+
+**Ventas**: `POST /api/v1/sales`, `GET /api/v1/sales/:id`; `sync/push` con `opType: SALE` (misma lógica de negocio en transacción); ver Swagger y `SYNC_CONTRACTS.md`.
+
+**Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno.
 
 ## Project setup
 

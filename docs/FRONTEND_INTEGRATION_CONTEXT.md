@@ -31,6 +31,17 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 - `GET /api/v1/inventory/movements?productId=&limit=` — últimos `StockMovement` (default 100, max 500).
 - `POST /api/v1/inventory/adjustments` — cuerpo: `productId`, `type` `IN_ADJUST`|`OUT_ADJUST`, `quantity` (string > 0), opcional `reason`, `unitCostFunctional` (entrada; si falta usa costo medio actual o `Product.cost`), `opId` (idempotencia). Respuesta `{ status: applied|skipped, movementId? }`.
 
+**Ventas (M4):**
+
+- `POST /api/v1/sales` — confirma venta: `lines[]` (`productId`, `quantity`, `price` string, opcional `discount`), opcional `id` (UUID cliente; si ya existe venta con ese id en la tienda, respuesta idempotente sin duplicar stock), `documentCurrencyCode`, `userId`, `deviceId`, `fxSnapshot` (`baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` `YYYY-MM-DD`, opcional `fxSource` e.g. `POS_OFFLINE`). Descuenta stock (`OUT_SALE`) y guarda importes documento + funcional en cabecera y líneas.
+- `GET /api/v1/sales/:id` — detalle con líneas (misma tienda que `X-Store-Id`).
+
+**Compras / recepción (M5/M6 complemento):**
+
+- `POST /api/v1/purchases` — recepción de mercancía: `supplierId` (UUID), `lines[]` (`productId`, `quantity`, `unitCost` en moneda documento), opcional `id` (idempotencia), `documentCurrencyCode`, `fxSnapshot` (misma forma que ventas). Crea `Purchase` estado `RECEIVED`, `dateReceived` = ahora, movimientos `IN_PURCHASE` y actualiza costo medio funcional del inventario.
+- `GET /api/v1/purchases/:id` — detalle con líneas y proveedor.
+- Proveedores: el seed crea un `Supplier` por defecto si la tabla está vacía; no hay CRUD de proveedores en API aún (usar seed / admin / Prisma).
+
 **Configuracion de tienda (moneda funcional, moneda documento por defecto):**
 
 - `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`.  
@@ -75,18 +86,16 @@ Resumen obligatorio para POS / mobile:
 
 Ejemplo: 1 USD = 36,50 VES → base `USD`, quote `VES`, rate `36.50`.
 
-**Referencia en pantalla (total USD + total Bs):** el front puede usar `GET .../exchange-rates/latest` para mostrar Bs **antes de confirmar**. Al **confirmar** venta, el snapshot debe persistirse en el documento (endpoint de ventas pendiente).
+**Referencia en pantalla (total USD + total Bs):** el front puede usar `GET .../exchange-rates/latest` para mostrar Bs **antes de confirmar**. Al **confirmar** venta (`POST /sales` o `sync/push` `SALE`), enviar `fxSnapshot` para que el servidor persista par, tasa y fecha en el documento.
 
-### DTO conceptual venta (cuando exista endpoint)
+### Payload venta (REST y sync)
 
-El front debe estar preparado para enviar (ademas de lineas):
+Además de líneas (`productId`, `quantity`, `price`, `discount` opcional), enviar:
 
-- `documentCurrencyCode`, `functionalCurrencyCode`
-- `fxBaseCurrencyCode`, `fxQuoteCurrencyCode`, `fxRateQuotePerBase` (string decimal)
-- `exchangeRateDate` (fecha de la tasa usada)
-- `fxSource` opcional (`POS_OFFLINE`, etc.)
+- `documentCurrencyCode` opcional (default desde `BusinessSettings`)
+- `fxSnapshot`: `baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` (`YYYY-MM-DD`), `fxSource` opcional (`POS_OFFLINE` usa la tasa del cliente en MVP USD/VES)
 
-Lineas: cantidad + precio unitario en **moneda documento**; el backend completa dimension funcional.
+El backend resuelve moneda funcional desde `BusinessSettings` y completa totales e importes por línea en documento y funcional.
 
 ## 4) Mongo `products_read` (lectura catalogo)
 
@@ -101,7 +110,7 @@ Especificacion: `docs/api/MONGO_PRODUCTS_READ.md`.
 
 Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
-- `POST /api/v1/sync/push` — primer corte: batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
+- `POST /api/v1/sync/push` — batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `PURCHASE_RECEIVE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
 - `GET /api/v1/sync/pull?since=&limit=` — cambios del servidor desde el último `serverVersion` del **log global** (`ServerChangeLog`): `PRODUCT_CREATED` | `PRODUCT_UPDATED` | `PRODUCT_DEACTIVATED` con `payload: { productId, fields }`. `limit` default 500, max 500. Guardar `toVersion` como siguiente `since`. Solo entran productos **creados/actualizados tras desplegar este log** (histórico previo no se backfildea).
 - Cada operacion lleva `opId` (UUID v4).
 - **Ventas offline** deben incluir bloque **FX** igual que venta online confirmada.
@@ -118,7 +127,7 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 - [ ] Pantalla tasa: mostrar fecha efectiva y fuente (BCV / manual).
 - [ ] Ticket: totales en moneda documento; opcional linea “referencia funcional”.
 - [ ] Offline: persistir FX en SQLite junto al ticket antes de sync.
-- [ ] Reintentos sync: mismo `opId`, no duplicar venta.
+- [x] Reintentos sync: mismo `opId` → `skipped`; misma `sale.id` ya persistida → sin duplicar movimientos de stock.
 
 ## 8) Referencias codigo / docs backend
 
@@ -132,4 +141,7 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 | Tracker | `docs/IMPLEMENTATION_TRACKER.md` |
 | Productos API | `src/modules/products/` |
 | Inventario API | `src/modules/inventory/` |
+| Ventas API | `src/modules/sales/` |
+| Compras API | `src/modules/purchases/` |
+| FX snapshot tienda | `src/modules/exchange-rates/store-fx-snapshot.service.ts` |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |

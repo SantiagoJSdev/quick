@@ -1,4 +1,7 @@
 import type { InventoryService } from '../inventory/inventory.service';
+import type { PurchasesService } from '../purchases/purchases.service';
+import type { SalesService } from '../sales/sales.service';
+import type { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { SyncService } from './sync.service';
 
 describe('SyncService', () => {
@@ -11,7 +14,25 @@ describe('SyncService', () => {
       applyAdjustTx: jest.fn(),
     } as unknown as InventoryService;
 
-    const service = new SyncService(prisma, inventory);
+    const sales = {
+      createSaleTx: jest.fn(),
+    } as unknown as SalesService;
+
+    const purchases = {
+      createPurchaseTx: jest.fn(),
+    } as unknown as PurchasesService;
+
+    const storeFx = {
+      resolveFxSnapshot: jest.fn(),
+    } as unknown as StoreFxSnapshotService;
+
+    const service = new SyncService(
+      prisma,
+      inventory,
+      sales,
+      purchases,
+      storeFx,
+    );
     const result = await service.push(
       { deviceId: 'device-x', ops: [] },
       '00000000-0000-4000-8000-000000000001',

@@ -12,7 +12,12 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-const SYNC_PUSH_OP_TYPES = ['SALE', 'INVENTORY_ADJUST', 'NOOP'] as const;
+const SYNC_PUSH_OP_TYPES = [
+  'SALE',
+  'PURCHASE_RECEIVE',
+  'INVENTORY_ADJUST',
+  'NOOP',
+] as const;
 export type SyncPushOpType = (typeof SYNC_PUSH_OP_TYPES)[number];
 
 export class SyncPushOpDto {

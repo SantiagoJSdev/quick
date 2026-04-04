@@ -1,5 +1,9 @@
 import { randomUUID } from 'crypto';
+import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
+import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { PurchasesService } from '../purchases/purchases.service';
+import { SalesService } from '../sales/sales.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncService } from './sync.service';
 
@@ -15,7 +19,11 @@ const run = process.env.RUN_INTEGRATION === '1';
     prisma = new PrismaService();
     await prisma.$connect();
     const inventory = new InventoryService(prisma);
-    service = new SyncService(prisma, inventory);
+    const exchangeRates = new ExchangeRatesService(prisma);
+    const storeFx = new StoreFxSnapshotService(exchangeRates);
+    const sales = new SalesService(prisma, storeFx, inventory);
+    const purchases = new PurchasesService(prisma, storeFx, inventory);
+    service = new SyncService(prisma, inventory, sales, purchases, storeFx);
 
     const store = await prisma.store.findFirst({
       include: { businessSettings: true },

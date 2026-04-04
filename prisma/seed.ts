@@ -36,6 +36,14 @@ async function main() {
     );
     stores = await prisma.store.findMany({ take: 10 });
   }
+  const supplierCount = await prisma.supplier.count();
+  if (supplierCount === 0) {
+    await prisma.supplier.create({
+      data: { name: 'Proveedor seed (general)' },
+    });
+    console.log('Seed: created default Supplier for purchases / POST /purchases');
+  }
+
   for (const store of stores) {
     await prisma.businessSettings.upsert({
       where: { storeId: store.id },

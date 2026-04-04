@@ -204,4 +204,206 @@ export class InventoryService {
 
     return { status: 'applied', movementId: movement.id };
   }
+
+  /**
+   * Salida por venta (`OUT_SALE`). Costo al costo medio funcional actual; no repricing.
+   * `opId` opcional (p. ej. `${syncOpId}:${productId}`) para idempotencia.
+   */
+  async applyOutSaleLineTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      storeId: string;
+      productId: string;
+      quantity: Prisma.Decimal;
+      saleId: string;
+      opId?: string | null;
+      priceAtMomentDocument?: Prisma.Decimal | null;
+    },
+  ): Promise<{ movementId: string }> {
+    const { storeId, productId, quantity: qtyMag, saleId } = params;
+    if (!qtyMag.isFinite() || qtyMag.lte(0)) {
+      throw new BadRequestException('Invalid sale line quantity');
+    }
+
+    if (params.opId) {
+      const dup = await tx.stockMovement.findUnique({
+        where: { opId: params.opId },
+      });
+      if (dup) {
+        if (dup.storeId !== storeId || dup.productId !== productId) {
+          throw new BadRequestException(
+            'opId already used for another movement',
+          );
+        }
+        return { movementId: dup.id };
+      }
+    }
+
+    const product = await tx.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    let item = await tx.inventoryItem.findUnique({
+      where: { productId_storeId: { productId, storeId } },
+    });
+
+    if (!item) {
+      item = await tx.inventoryItem.create({
+        data: {
+          productId,
+          storeId,
+          quantity: new Prisma.Decimal(0),
+          reserved: new Prisma.Decimal(0),
+          minStock: new Prisma.Decimal(0),
+          averageUnitCostFunctional: new Prisma.Decimal(0),
+          totalCostFunctional: new Prisma.Decimal(0),
+        },
+      });
+    }
+
+    const available = item.quantity.minus(item.reserved);
+    if (available.lt(qtyMag)) {
+      throw new BadRequestException(
+        'Insufficient stock (quantity minus reserved)',
+      );
+    }
+
+    const avg = item.quantity.gt(0)
+      ? item.averageUnitCostFunctional
+      : new Prisma.Decimal(0);
+    const newQty = item.quantity.minus(qtyMag);
+    const newTotal = avg.mul(newQty);
+    const newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
+    const totalCostForMove = avg.mul(qtyMag);
+
+    const movement = await tx.stockMovement.create({
+      data: {
+        opId: params.opId ?? null,
+        productId,
+        storeId,
+        type: 'OUT_SALE',
+        quantity: qtyMag,
+        unitCostFunctional: avg,
+        totalCostFunctional: totalCostForMove,
+        priceAtMoment: params.priceAtMomentDocument ?? null,
+        referenceId: saleId,
+        reason: null,
+      },
+    });
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        quantity: newQty,
+        totalCostFunctional: newTotal,
+        averageUnitCostFunctional: newAvg,
+        lastAdjustedAt: new Date(),
+      },
+    });
+
+    return { movementId: movement.id };
+  }
+
+  /**
+   * Entrada por compra recibida (`IN_PURCHASE`). Actualiza costo medio funcional como `IN_ADJUST`.
+   * `unitCostFunctional` = costo unitario ya convertido a moneda funcional.
+   */
+  async applyInPurchaseLineTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      storeId: string;
+      productId: string;
+      quantity: Prisma.Decimal;
+      purchaseId: string;
+      opId?: string | null;
+      unitCostFunctional: Prisma.Decimal;
+      lineTotalFunctional: Prisma.Decimal;
+      unitCostDocument?: Prisma.Decimal | null;
+      lineTotalDocument?: Prisma.Decimal | null;
+    },
+  ): Promise<{ movementId: string }> {
+    const {
+      storeId,
+      productId,
+      quantity: qtyMag,
+      purchaseId,
+      unitCostFunctional,
+      lineTotalFunctional,
+    } = params;
+    if (!qtyMag.isFinite() || qtyMag.lte(0)) {
+      throw new BadRequestException('Invalid purchase line quantity');
+    }
+    if (!unitCostFunctional.isFinite() || unitCostFunctional.lt(0)) {
+      throw new BadRequestException('Invalid unit cost (functional)');
+    }
+
+    if (params.opId) {
+      const dup = await tx.stockMovement.findUnique({
+        where: { opId: params.opId },
+      });
+      if (dup) {
+        if (dup.storeId !== storeId || dup.productId !== productId) {
+          throw new BadRequestException(
+            'opId already used for another movement',
+          );
+        }
+        return { movementId: dup.id };
+      }
+    }
+
+    const product = await tx.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    let item = await tx.inventoryItem.findUnique({
+      where: { productId_storeId: { productId, storeId } },
+    });
+
+    if (!item) {
+      item = await tx.inventoryItem.create({
+        data: {
+          productId,
+          storeId,
+          quantity: new Prisma.Decimal(0),
+          reserved: new Prisma.Decimal(0),
+          minStock: new Prisma.Decimal(0),
+          averageUnitCostFunctional: new Prisma.Decimal(0),
+          totalCostFunctional: new Prisma.Decimal(0),
+        },
+      });
+    }
+
+    const newQty = item.quantity.plus(qtyMag);
+    const newTotal = item.totalCostFunctional.plus(lineTotalFunctional);
+    const newAvg = newQty.gt(0) ? newTotal.div(newQty) : new Prisma.Decimal(0);
+
+    const movement = await tx.stockMovement.create({
+      data: {
+        opId: params.opId ?? null,
+        productId,
+        storeId,
+        type: 'IN_PURCHASE',
+        quantity: qtyMag,
+        unitCostFunctional,
+        totalCostFunctional: lineTotalFunctional,
+        costAtMoment: params.unitCostDocument ?? null,
+        referenceId: purchaseId,
+        reason: null,
+      },
+    });
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        quantity: newQty,
+        totalCostFunctional: newTotal,
+        averageUnitCostFunctional: newAvg,
+        lastAdjustedAt: new Date(),
+      },
+    });
+
+    return { movementId: movement.id };
+  }
 }

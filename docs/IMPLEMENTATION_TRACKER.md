@@ -75,16 +75,16 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - WebSockets en tiempo real.
 - Reconciliacion automatica completa de inventario por job nocturno.
 - Reporteria avanzada y dashboards.
-- **Servicios** de confirmacion compra/venta con conversion FX end-to-end (schema listo; logica y tests pendientes).
+- **Devoluciones** y flujos avanzados post confirmación compra/venta (MVP recepción compra + venta con FX ya implementados).
 - Contabilidad completa (mayor, asientos dobles).
 
 ## 3) Roadmap por modulos
 
 ### Estado general de avance (actualizar en cada entrega)
 
-- Estado de fase: `Sprint 1` + `M2 inventario base listo; M4 ventas pendiente`
-- Avance global estimado Fase 1: `~70%` (inventario API + sync adjust; falta venta confirmada end-to-end)
-- Ultima actualizacion: `2026-04-04`
+- Estado de fase: `Sprint 1` + `M2–M4 operativos; compras REST+sync + FX compartido + tests conversión`
+- Avance global estimado Fase 1: `~85%` (venta/compra confirmadas, sync SALE/PURCHASE_RECEIVE; pendiente M5 jobs y devoluciones)
+- Ultima actualizacion: `2026-04-03`
 
 ### Implementado vs. pasos a futuro (deuda conocida)
 
@@ -94,16 +94,16 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 | **Histórico `ServerChangeLog`** | Solo eventos **después** de desplegar la tabla (sin backfill de productos viejos) | Job de rehidratación o snapshot inicial si hace falta |
 | **Ajustes de inventario en `pull`** | No: el POS actualiza stock vía **push** (`INVENTORY_ADJUST`) o **REST** | Opcional: `INVENTORY_*` en pull para auditoría multi-dispositivo |
 | **`reserved` / reservas** | Campo existe; API de ajuste solo valida `quantity - reserved` en salidas | Endpoints de reserva para carrito / pedidos |
-| **Ventas `SALE` en sync** | `failed` hasta M4 | Transacción venta + `OUT_SALE` + FX |
-| **Multi-moneda** | Costo inventario en **moneda funcional**; costo unitario IN explícito o `Product.cost` | Servicio FX puro + tests (M6) |
+| **Ventas `SALE` / compras `PURCHASE_RECEIVE` en sync** | Implementado: misma transacción que batch + FX + movimientos | Devoluciones / transferencias |
+| **Multi-moneda** | `StoreFxSnapshotService` + conversión documento→funcional; tests `convert-amount.spec.ts` | Más pares; integración FX crítica (M6) |
 
 ### Estado por modulo
 
 - M0 Fundacion tecnica: `IN_PROGRESS`
 - M1 Products + Outbox + Mongo Projection: `DONE` (MVP API + proyección)
 - M2 Inventory base: `DONE` (API ajustes + lectura; sin reservas avanzadas)
-- M3 Sync offline POS: `IN_PROGRESS` (push/pull + `INVENTORY_ADJUST` OK; `SALE` pendiente M4)
-- M4 Sales integradas: `TODO`
+- M3 Sync offline POS: `IN_PROGRESS` (push/pull + `INVENTORY_ADJUST` + `SALE` + `PURCHASE_RECEIVE`)
+- M4 Sales integradas: `DONE`
 - M5 Reconciliacion y observabilidad: `TODO`
 - M6 Multi-moneda (dominio + API): `IN_PROGRESS` (schema + docs; servicios y pruebas pendientes)
 
@@ -129,26 +129,26 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [ ] Futuro: PATCH metadatos línea (`minStock`, `maxStock`, `locationInStore`); reservas (`reserved`) explícitas vía API.
 
 ### M3 - Sync offline POS (operativo)
-- [x] `POST /sync/push` primer corte: batch, `acked` / `skipped` / `failed`, idempotencia por `opId`, `NOOP` para pruebas; `SALE` sigue `failed` hasta M4.
+- [x] `POST /sync/push` primer corte: batch, `acked` / `skipped` / `failed`, idempotencia por `opId`, `NOOP` para pruebas; `SALE` y `PURCHASE_RECEIVE` operativos.
 - [x] `INVENTORY_ADJUST` en push: aplica mismo negocio que `POST /inventory/adjustments` (payload `inventoryAdjust` o raíz).
 - [x] `GET /sync/pull?since&limit` — `ServerChangeLog` (version global); productos escriben `PRODUCT_*` en la misma transacción que outbox.
 - [x] Persistencia `SyncOperation` + `StoreSyncState` (version por tienda) + registro `POSDevice`.
-- [x] Tests: unit sync vacio + integracion NOOP (`RUN_INTEGRATION=1`); casos TC completos en `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md` (venta real pendiente M4).
+- [x] Tests: unit sync vacio + integracion NOOP (`RUN_INTEGRATION=1`); casos TC completos en `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md`.
 
 ### M4 - Sales integradas con inventario
-- [ ] Crear venta + lineas en transaccion.
-- [ ] Generar `StockMovement` tipo `OUT_SALE`.
-- [ ] Evitar stock negativo segun politica definida.
-- [ ] Persistir snapshot FX + totales documento/funcional + lineas duales (sync offline respeta payload).
+- [x] Crear venta + lineas en transaccion.
+- [x] Generar `StockMovement` tipo `OUT_SALE`.
+- [x] Evitar stock negativo segun politica definida.
+- [x] Persistir snapshot FX + totales documento/funcional + lineas duales (sync offline respeta payload).
 
 ### M6 - Multi-moneda (Venezuela)
 - [x] Modelo datos: `Currency`, `ExchangeRate`, `BusinessSettings` + campos en documentos/inventario/movimientos (migracion `multi_currency_foundation`).
 - [x] Documentacion dominio (flujos, invariantes, DTOs, ejemplos, errores comunes): `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md`.
 - [x] Contexto Front actualizado: `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
 - [x] Seed inicial `USD` / `VES` + `BusinessSettings` por tienda existente + tasas ejemplo (`npm run db:seed`). Ver `prisma/seed.ts`.
-- [ ] Servicio conversion FX puro (tests unitarios: matriz monedas y redondeo).
-- [x] API tasas: `GET /exchange-rates/latest` + `POST /exchange-rates` (solo por tienda; header `X-Store-Id`; outbox -> Mongo `fx_rates_read`). Confirmacion venta pendiente.
-- [ ] Confirmacion compra/venta: aplicar reglas §4 dominio + idempotencia `opId`.
+- [x] Función conversión documento→funcional `convertAmountDocumentToFunctional` + tests unitarios USD/VES (`src/common/fx/convert-amount.spec.ts`).
+- [x] API tasas: `GET /exchange-rates/latest` + `POST /exchange-rates` (solo por tienda; header `X-Store-Id`; outbox -> Mongo `fx_rates_read`).
+- [x] Confirmacion compra/venta MVP: `POST /sales`, `POST /purchases`, `sync/push` `SALE` / `PURCHASE_RECEIVE`; `StoreFxSnapshotService` compartido; idempotencia `opId` por línea + `id` documento.
 - [ ] Devoluciones (politica tasa original vs tasa del dia) + documentar.
 - [ ] Pruebas integracion criticas (FX + offline + no mutacion historico).
 
@@ -221,20 +221,23 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Implementar escritura a outbox en transaccion para `PRODUCT_CREATED|UPDATED|DEACTIVATED`. (ver `products.service.ts` + `product-outbox.payload.ts`)
 - [x] DONE - Logs al arranque: PostgreSQL conectado + MongoDB (conectado, omitido sin URI, o error si URI invalida). (ver `PrismaService`, `MongoService`)
 - [x] DONE - Implementar worker de proyeccion a Mongo (`products_read`) con retry/backoff. (ver `src/outbox/outbox-mongo.worker.ts`)
-- [x] DONE - Fundacion **multi-moneda** (Venezuela): modelos `Currency`, `ExchangeRate`, `BusinessSettings`; campos FX/duales en ventas/compras/lineas/inventario/movimientos; doc dominio + `FRONTEND_INTEGRATION_CONTEXT.md` + migracion `multi_currency_foundation`. (logica confirmacion compra/venta y tests FX: pendiente M6)
+- [x] DONE - Fundacion **multi-moneda** (Venezuela): modelos `Currency`, `ExchangeRate`, `BusinessSettings`; campos FX/duales en ventas/compras/lineas/inventario/movimientos; doc dominio + `FRONTEND_INTEGRATION_CONTEXT.md` + migracion `multi_currency_foundation`. (confirmación compra/venta MVP + tests conversión: hecho; devoluciones / más pares: pendiente)
 - [x] DONE - Endpoints `GET /stores/:storeId/business-settings`, `GET /exchange-rates/latest`, `POST /exchange-rates` + `npm run db:seed`.
 - [x] DONE - Guard global `X-Store-Id` (tienda + `BusinessSettings`); tasas solo por tienda; proyeccion Mongo `fx_rates_read` via outbox. Ver `StoreConfiguredGuard`, `FX_RATES_READ.md`.
 - [x] DONE - Lectura catalogo: `GET /products` y `GET /products/:id` desde Mongo `products_read` con fallback a Postgres (`source=auto` por defecto); `X-Catalog-Source`; `source=mongo|postgres`.
 - [x] DONE - `POST /sync/push` + `StoreSyncState` + `SyncOperation` (ver `src/modules/sync/`, `SYNC_CONTRACTS.md`).
 - [x] DONE - `GET /sync/pull` + `ServerChangeLog` + registro `PRODUCT_*` desde `products.service.ts`.
 - [x] DONE - Módulo `inventory`: lecturas + `POST /inventory/adjustments`; `sync/push` `INVENTORY_ADJUST` enlazado.
+- [x] DONE - Módulo **ventas (M4)**: `POST /api/v1/sales`, `GET /api/v1/sales/:id`; `sync/push` `SALE` operativo (FX snapshot, `OUT_SALE` por línea, idempotencia `sale.id` + `opId`). Ver `src/modules/sales/`, `SYNC_CONTRACTS.md`.
+- [x] DONE - Módulo **compras / recepción**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` `PURCHASE_RECEIVE`; `IN_PURCHASE` por línea; seed `Supplier` por defecto. Ver `src/modules/purchases/`.
+- [x] DONE - **FX compartido**: `StoreFxSnapshotService` + `FxSnapshotDto` en `exchange-rates` (ventas/compras/sync).
 - [x] DONE - Swagger en `http://localhost:3000/api/docs` (`@nestjs/swagger` + DTOs documentados en sync).
 - [x] DONE - Coleccion Postman `postman/QuickMarket_API.postman_collection.json` (variables `baseUrl`, `storeId`).
 
 ### Proximas tareas (sprint 2+)
 
 - [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
-- [ ] TODO - Completar contexto Front con inventario exhaustivo de endpoints y ejemplos JSON por pantalla cuando existan modulos `sales`, `purchases`, `fx`.
+- [ ] TODO - Completar contexto Front con ejemplos JSON por pantalla; ampliar con devoluciones y más FX.
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -260,3 +263,5 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-04: `POST /api/v1/sync/push`, modelo `StoreSyncState`, `SyncOperation` ampliado; Swagger `/api/docs`; Postman; tests integracion opcionales `RUN_INTEGRATION=1`.
 - 2026-04-04: `GET /api/v1/sync/pull` + tabla `ServerChangeLog`; productos registran `PRODUCT_*` para pull; documentado desacople de versiones push vs pull.
 - 2026-04-04: Tabla **Implementado vs. pasos a futuro** en tracker; **M2 inventario** (`GET/POST inventory`, movimientos, ajustes atómicos, costeo funcional); `sync/push` `INVENTORY_ADJUST` operativo.
+- 2026-04-03: **M4 ventas**: `POST/GET sales`, conversión documento→funcional (USD/VES), `sync/push` `SALE` con `createSaleTx` en transacción de batch; movimientos `OUT_SALE` con `opId` por línea; idempotencia por `sale.id` existente en tienda.
+- 2026-04-03: **Compras + M6 parcial**: `POST/GET purchases`, `sync/push` `PURCHASE_RECEIVE`, `createPurchaseTx` + `IN_PURCHASE`; `StoreFxSnapshotService` extraído de ventas; tests `convert-amount.spec.ts`; DTO `sync/push` incluye `PURCHASE_RECEIVE`.

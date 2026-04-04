@@ -33,10 +33,19 @@ Enviar al servidor un batch de operaciones locales del POS (oplog) para aplicar 
         "sale": {
           "id": "b3b40cb1-7132-4c86-85ab-7b8ab2c8dbfd",
           "storeId": "store-uuid",
+          "documentCurrencyCode": "VES",
           "userId": "user-uuid",
+          "deviceId": "device-123",
           "lines": [
-            { "productId": "p-uuid", "quantity": "2", "price": "25.00" }
-          ]
+            { "productId": "p-uuid", "quantity": "2", "price": "25.00", "discount": "0" }
+          ],
+          "fxSnapshot": {
+            "baseCurrencyCode": "USD",
+            "quoteCurrencyCode": "VES",
+            "rateQuotePerBase": "36.50",
+            "effectiveDate": "2026-04-04",
+            "fxSource": "POS_OFFLINE"
+          }
         }
       }
     }
@@ -143,7 +152,50 @@ Traer del servidor los cambios ocurridos desde el ultimo `serverVersion` del dis
 
 ### Ops que se empujan desde POS al servidor (push)
 
-- `SALE` (persistencia en `SyncOperation` con `failed` / `not_implemented` hasta M4; no crea venta aún)
+- `SALE` — **implementado**: en la misma transacción del batch crea `Sale` + líneas, aplica salidas de inventario (`OUT_SALE`, costo medio funcional) y persiste snapshot FX en cabecera/líneas. `sale.storeId` debe coincidir con `X-Store-Id`. El servidor inyecta `opId` de la op en el DTO interno para idempotencia de movimientos: cada línea usa `StockMovement.opId` en formato `{opIdSync}:{productId}`. Si `sale.id` ya existe en esa tienda, se devuelve la venta existente sin duplicar stock. Payload en `payload.sale` (también se acepta `fx` como alias de `fxSnapshot`):
+  ```json
+  {
+    "sale": {
+      "id": "<uuid opcional>",
+      "storeId": "<uuid tienda>",
+      "documentCurrencyCode": "VES",
+      "userId": "<uuid opcional>",
+      "deviceId": "<opcional; si falta en sync se usa deviceId del request>",
+      "lines": [
+        { "productId": "<uuid>", "quantity": "2", "price": "25.00", "discount": "0" }
+      ],
+      "fxSnapshot": {
+        "baseCurrencyCode": "USD",
+        "quoteCurrencyCode": "VES",
+        "rateQuotePerBase": "36.50",
+        "effectiveDate": "2026-04-04",
+        "fxSource": "POS_OFFLINE"
+      }
+    }
+  }
+  ```
+  MVP FX: pares USD/VES; con `fxSource: "POS_OFFLINE"` se usa la tasa enviada; en otro caso se contrasta con la tasa de la tienda (tolerancia documentada en código).
+- `PURCHASE_RECEIVE` — **implementado**: crea `Purchase` + líneas, entradas de inventario (`IN_PURCHASE`, costo medio funcional actualizado con el costo de la línea en funcional) y snapshot FX en cabecera/líneas. `purchase.storeId` debe coincidir con `X-Store-Id`. Idempotencia de movimientos: `StockMovement.opId` = `{opIdSync}:{productId}` por línea. Si `purchase.id` ya existe en la tienda, se devuelve la compra existente sin duplicar stock. Payload en `payload.purchase` (alias `fx` para `fxSnapshot`):
+  ```json
+  {
+    "purchase": {
+      "id": "<uuid opcional>",
+      "storeId": "<uuid tienda>",
+      "supplierId": "<uuid proveedor>",
+      "documentCurrencyCode": "VES",
+      "lines": [
+        { "productId": "<uuid>", "quantity": "10", "unitCost": "5.00" }
+      ],
+      "fxSnapshot": {
+        "baseCurrencyCode": "USD",
+        "quoteCurrencyCode": "VES",
+        "rateQuotePerBase": "36.50",
+        "effectiveDate": "2026-04-04",
+        "fxSource": "POS_OFFLINE"
+      }
+    }
+  }
+  ```
 - `INVENTORY_ADJUST` — **implementado**: aplica ajuste en la misma transacción que el batch; `opId` de la op = `StockMovement.opId` (idempotente). Payload mínimo:
   ```json
   {
@@ -158,7 +210,7 @@ Traer del servidor los cambios ocurridos desde el ultimo `serverVersion` del dis
   ```
   También se acepta el mismo objeto en la raíz del `payload` (sin `inventoryAdjust`). `type`: `IN_ADJUST` | `OUT_ADJUST`; `quantity` string decimal positivo.
 - `NOOP` — **solo para pruebas de conectividad e idempotencia**: se registra como aplicada, incrementa `serverVersion`, no efecto de negocio
-- (futuro) `PURCHASE_RECEIVE`, `TRANSFER_OUT`, `TRANSFER_IN`
+- (futuro) `TRANSFER_OUT`, `TRANSFER_IN`
 
 ### Ops que el servidor entrega a POS (pull)
 
