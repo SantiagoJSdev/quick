@@ -41,7 +41,7 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 
 - `POST /api/v1/purchases` — recepción de mercancía: `supplierId` (UUID), `lines[]` (`productId`, `quantity`, `unitCost` en moneda documento), opcional `id` (idempotencia), `documentCurrencyCode`, `fxSnapshot` (misma forma que ventas). Crea `Purchase` estado `RECEIVED`, `dateReceived` = ahora, movimientos `IN_PURCHASE` y actualiza costo medio funcional del inventario.
 - `GET /api/v1/purchases/:id` — detalle con líneas y proveedor.
-- Proveedores: el seed crea un `Supplier` por defecto si la tabla está vacía; no hay CRUD de proveedores en API aún (usar seed / admin / Prisma).
+- Proveedores: el seed crea un `Supplier` por defecto si la tabla está vacía; **no hay** `GET /suppliers` ni CRUD en API. Para `POST /purchases` hace falta un `supplierId` (UUID) obtenido de seed, Prisma Studio o admin. La app Flutter puede guardar proveedores **solo en local** hasta que exista endpoint.
 
 **Devoluciones de venta (M6):**
 
@@ -85,7 +85,7 @@ Resumen obligatorio para POS / mobile:
    - se guarda **tasa usada** (`exchangeRateDate` + par `fxBase` / `fxQuote` + `fxRateQuotePerBase`);
    - cada linea lleva importes en **documento** y **funcional**;
    - **no** se recalcula historico cuando cambia la tasa del dia.
-4. **Offline:** el cliente envia en el payload la misma tasa con la que cobro; el servidor valida coherencia (politica de tolerancia por definir en servicio).
+4. **Offline:** el cliente envía en el payload la misma tasa con la que cobró; el servidor valida coherencia (tolerancia ±0,5% respecto a la tasa servidor salvo `fxSource: POS_OFFLINE`).
 
 ### Convencion de tasa (para UI)
 
@@ -100,7 +100,7 @@ Ejemplo: 1 USD = 36,50 VES → base `USD`, quote `VES`, rate `36.50`.
 Además de líneas (`productId`, `quantity`, `price`, `discount` opcional), enviar:
 
 - `documentCurrencyCode` opcional (default desde `BusinessSettings`)
-- `fxSnapshot`: `baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` (`YYYY-MM-DD`), `fxSource` opcional (`POS_OFFLINE` usa la tasa del cliente en MVP USD/VES)
+- `fxSnapshot`: `baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` (`YYYY-MM-DD`), `fxSource` opcional (`POS_OFFLINE` usa la tasa del cliente; el par debe coincidir con una fila `ExchangeRate` de la tienda, ver `StoreFxSnapshotService`)
 
 El backend resuelve moneda funcional desde `BusinessSettings` y completa totales e importes por línea en documento y funcional.
 
@@ -135,11 +135,48 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 - [ ] Ticket: totales en moneda documento; opcional linea “referencia funcional”.
 - [ ] Offline: persistir FX en SQLite junto al ticket antes de sync.
 - [x] Reintentos sync: mismo `opId` → `skipped`; misma `sale.id` ya persistida → sin duplicar movimientos de stock.
+- [ ] **Sprint app — Config:** enlazar `storeId`, `GET business-settings`, `GET exchange-rates/latest`.
+- [ ] **Sprint app — Inventario:** `GET inventory`, ajustes `POST inventory/adjustments`, CRUD productos según permisos.
+- [ ] **Sprint app — POS:** carrito con precio documento + referencia VES/funcional, cantidad, `POST /sales` + `fxSnapshot` + `deviceId` estable.
 
-## 8) Referencias codigo / docs backend
+## 8) Multi-dispositivo (varias instalaciones de la app)
+
+- Varios teléfonos/tablets pueden operar la **misma tienda** usando el mismo `X-Store-Id`.
+- Cada instalación debe generar y conservar un **`deviceId`** (UUID) único; enviarlo en **`POST /api/v1/sales`** (`deviceId` opcional pero recomendado) y en **`POST /api/v1/sync/push`** (obligatorio en el DTO de sync). El servidor registra/actualiza `POSDevice` por `deviceId`.
+- La idempotencia de operaciones va por **`opId`** (sync) y por **`id`** de documento (venta/compra) cuando aplique; reintentos no duplican stock.
+
+## 9) Seguridad resumida (cliente móvil)
+
+| Tema | Detalle |
+|------|---------|
+| Cabeceras | `X-Store-Id` casi siempre; opcional `X-Request-Id` (UUID o string ≤128 chars). |
+| Transporte | Producción: **HTTPS**; no exponer `storeId` en URLs públicas si se puede evitar (ya va en header). |
+| Errores | JSON `{ statusCode, error, message[], requestId }`; log local del `requestId` para soporte. |
+| Ops | `GET /api/v1/ops/metrics` no es para POS; puede exigir `OPS_API_KEY`. |
+| Usuarios | **Sin** login JWT en API actual; la confianza es por red + `storeId` (y políticas futuras). |
+
+## 10) App Flutter / Android Studio + Gemini
+
+Guía paso a paso (proyecto nuevo, carpetas, sprints UI, paleta naranja de marca, pantallas, límites del backend):  
+**`docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`**
+
+Qué documentos del backend copiar al repo Flutter y dónde pegarlos:  
+**`docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`**
+
+## 11) Roadmap sugerido (front)
+
+| Sprint | Enfoque |
+|--------|---------|
+| **1** | Configuración tienda + tasas + inventario + productos (CRUD) + proveedores **solo UI local** + `deviceId` persistente. |
+| **2** | POS: búsqueda, QR/cámara, líneas con doble moneda en UI, totales, `POST /sales` (+ sync `SALE` opcional offline). |
+| **3+** | Compras, devoluciones, pull/push completo, mejoras proveedores cuando exista API. |
+
+## 12) Referencias codigo / docs backend
 
 | Tema | Ubicacion |
 |------|-----------|
+| Guía Flutter + Android + Gemini | `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md` |
+| Índice docs a copiar al repo Flutter | `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md` |
 | Multi-moneda dominio | `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md` |
 | Outbox | `docs/api/OUTBOX_EVENTS.md` |
 | Sync | `docs/api/SYNC_CONTRACTS.md` |

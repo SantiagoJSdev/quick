@@ -130,6 +130,8 @@ Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o
 
 **Devoluciones (M6)**: `POST /api/v1/sale-returns`, `GET /api/v1/sale-returns/:id`; `sync/push` `SALE_RETURN`. Política y límites: `docs/api/RETURNS_POLICY.md`.
 
+**App Flutter / Android:** contrato front `docs/FRONTEND_INTEGRATION_CONTEXT.md`; guía Android Studio + Gemini `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`; índice de documentos a copiar `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`.
+
 ## Project setup
 
 ```bash

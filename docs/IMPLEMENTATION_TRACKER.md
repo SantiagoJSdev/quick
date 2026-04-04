@@ -260,6 +260,7 @@ Checklist vivo; marcar al cerrar cada ítem.
 
 - [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
 - [ ] TODO - Completar contexto Front con ejemplos JSON por pantalla; ampliar con más FX.
+- [x] DONE (base) - Guía Flutter/Android + Gemini: `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`; índice de copia `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`; `FRONTEND_INTEGRATION_CONTEXT.md` ampliado (multi-dispositivo, seguridad, roadmap sprint, proveedores sin API).
 - [x] DONE - **Auth `/ops/*`**: `OpsAuthGuard`, `OPS_API_KEY`, `OPS_IP_ALLOWLIST`, `TRUST_PROXY`; Swagger + README.
 
 ## 6) Criterios de listo (Definition of Done por modulo)
