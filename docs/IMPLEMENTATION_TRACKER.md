@@ -82,6 +82,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 ### M0 - Fundacion tecnica
 - [ ] Definir `api/v1` estandar de respuestas/errores.
 - [x] Configurar validacion global (ValidationPipe + transform + whitelist).
+- [x] Log de conexion a bases de datos al arrancar: PostgreSQL (Prisma) y MongoDB opcional (`MONGODB_URI`). (ver `prisma.service.ts`, `mongo.service.ts`)
 - [ ] Definir convencion de IDs (`UUID v4`) y trazabilidad (`requestId`, `opId`).
 
 ### M1 - Products + Outbox + Mongo Projection (MVP inicial)
@@ -167,6 +168,7 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 
 - [x] DONE - Implementar CRUD `products` con validacion (DTOs, validacion global y soft delete). (ver `src/modules/products/`)
 - [x] DONE - Implementar escritura a outbox en transaccion para `PRODUCT_CREATED|UPDATED|DEACTIVATED`. (ver `products.service.ts` + `product-outbox.payload.ts`)
+- [x] DONE - Logs al arranque: PostgreSQL conectado + MongoDB (conectado, omitido sin URI, o error si URI invalida). (ver `PrismaService`, `MongoService`)
 - [ ] TODO - Implementar worker de proyeccion a Mongo (`products_read`) con retry/backoff.
 - [ ] TODO - Implementar endpoint lectura mobile de productos desde Mongo con fallback a PostgreSQL.
 - [ ] TODO - Implementar primer corte de `sync/push` con idempotencia por `opId`.
@@ -199,4 +201,5 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-03-26: Estrategia offline definida con push/pull + oplog + idempotencia por `opId`.
 - 2026-03-26: Se establece Outbox Pattern para consistencia Postgres -> Mongo.
 - 2026-04-03: Productos escriben `OutboxEvent` en la misma transaccion que create/update/soft delete.
+- 2026-04-03: Arranque con log explicito de conexion PostgreSQL; Mongo opcional via `MONGODB_URI` con ping y manejo de error sin tumbar la API.
 
