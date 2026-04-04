@@ -82,6 +82,16 @@ PostgreSQL usa **tablas** (no “colecciones”; eso es Mongo).
 - **`fx_rates_read`**: proyeccion de la **ultima tasa por tienda y par** (USD/VES, etc.) cuando se crea un `ExchangeRate` y el worker procesa el outbox. Sirve para lectura rapida / sync hacia dispositivos si expones Mongo al cliente (o replica local).
 - **PostgreSQL** sigue siendo la fuente maestra; Mongo es eventual.
 
+## Prisma: carpeta `prisma/migrations/`
+
+Cada subcarpeta con nombre tipo **`20260404112022_sync_push_store_sync_state`** es **una migración versionada** del esquema de PostgreSQL:
+
+- Dentro hay un **`migration.sql`** con los `CREATE TABLE`, `ALTER TABLE`, índices, etc. que deben aplicarse en la base.
+- **`npx prisma migrate dev`** (desarrollo) o **`npx prisma migrate deploy`** (CI/producción) ejecutan esas migraciones en orden para que la base coincida con **`prisma/schema.prisma`**.
+- No hace falta tocar esos SQL a mano en el día a día: se generan al cambiar el schema con Prisma.
+
+**Ejemplo concreto** `20260404112022_sync_push_store_sync_state`: crea la tabla **`StoreSyncState`** (contador **`serverVersion`** por tienda para sync) y amplía **`SyncOperation`** (campos y FKs necesarios para **`POST /api/v1/sync/push`** e idempotencia por `opId`). El API en sí no “lee” esa carpeta en runtime; solo la usa Prisma al migrar.
+
 ## Header `X-Store-Id` (obligatorio en casi toda la API)
 
 Salvo la ruta raiz (`GET /`), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`** para esa tienda. Asi no se usan endpoints sin tienda configurada.
@@ -93,9 +103,11 @@ Salvo la ruta raiz (`GET /`), las rutas exigen el header **`X-Store-Id: <uuid-de
 
 Con la API en marcha (`npm run start:dev`): abre **http://localhost:3000/api/docs**. Usa **Authorize** y el esquema de API Key **X-Store-Id** con el UUID de la tienda (el mismo que en Postman).
 
-## Postman
+## Postman: `postman/QuickMarket_API.postman_collection.json`
 
-Colección versionada en **postman/QuickMarket_API.postman_collection.json**. Importar en Postman y definir variables **`baseUrl`** (p. ej. `http://localhost:3000`) y **`storeId`** (UUID impreso por `npm run db:seed` o desde Prisma Studio en `Store`).
+Es un archivo **colección de Postman** (formato JSON Collection v2.1). **No lo ejecuta Nest**; sirve para **importarlo en Postman** (Import → elegir el archivo) y tener requests de ejemplo (raíz, productos, business-settings, tasas, `sync/push`) con variables **`baseUrl`** y **`storeId`**. Así pruebas la API sin reescribir URLs y headers cada vez; puedes versionarlo en git junto al backend.
+
+Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o columna `id` en `Store` en Prisma Studio). Para **`sync/push`**, si repites el mismo `opId` que ya se aplicó, la API responderá `skipped`: usa un UUID nuevo por operación de prueba o borra la fila en `SyncOperation` si quieres repetir el mismo id.
 
 ## Project setup
 
@@ -129,15 +141,17 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-**Integración con PostgreSQL** (outbox + `sync/push`): con la base migrada y seed, en PowerShell:
+**Integración con PostgreSQL** (outbox + `sync/push`): con la base migrada y seed:
 
 ```powershell
-$env:RUN_INTEGRATION='1'; npm run test
+npm run test:integration
 ```
 
-En bash: `RUN_INTEGRATION=1 npm run test`. Sin esa variable, los `*.integration.spec.ts` se omiten.
+(o en PowerShell: `$env:RUN_INTEGRATION='1'; npm run test` — en bash: `RUN_INTEGRATION=1 npm run test`). Sin `RUN_INTEGRATION=1`, los `*.integration.spec.ts` se omiten.
 
-**Prisma en Windows**: si `npx prisma generate` falla con `EPERM` al sustituir `query_engine-windows.dll.node`, detén `npm run start:dev` y vuelve a ejecutar el generate.
+**Si `npm run test:integration` falla con** `Could not find mapping for model StoreSyncState` **(u otro modelo que acabas de añadir en `schema.prisma`)**: el **cliente generado de Prisma** en `node_modules/.prisma/client` no está al día. Detén el API (`npm run start:dev`), ejecuta **`npx prisma generate`** y vuelve a lanzar los tests. Suele pasar si migraste la base pero no se pudo regenerar el client (por ejemplo **EPERM** en Windows).
+
+**Prisma en Windows**: si `npx prisma generate` falla con `EPERM` al sustituir `query_engine-windows.dll.node`, detén `npm run start:dev` (y cualquier proceso que use ese DLL) y vuelve a ejecutar el generate.
 
 ## Deployment
 
