@@ -64,15 +64,30 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 ## 3) Roadmap por modulos
 
+### Estado general de avance (actualizar en cada entrega)
+
+- Estado de fase: `Sprint 1 en progreso`
+- Avance global estimado Fase 1: `45%`
+- Ultima actualizacion: `2026-04-03`
+
+### Estado por modulo
+
+- M0 Fundacion tecnica: `IN_PROGRESS`
+- M1 Products + Outbox + Mongo Projection: `IN_PROGRESS`
+- M2 Inventory base: `TODO`
+- M3 Sync offline POS: `TODO`
+- M4 Sales integradas: `TODO`
+- M5 Reconciliacion y observabilidad: `TODO`
+
 ### M0 - Fundacion tecnica
 - [ ] Definir `api/v1` estandar de respuestas/errores.
-- [ ] Configurar validacion global y manejo de excepciones.
+- [x] Configurar validacion global (ValidationPipe + transform + whitelist).
 - [ ] Definir convencion de IDs (`UUID v4`) y trazabilidad (`requestId`, `opId`).
 
 ### M1 - Products + Outbox + Mongo Projection (MVP inicial)
-- [ ] CRUD de productos en PostgreSQL.
-- [ ] Crear tabla `outbox_events`.
-- [ ] Publicar eventos de producto dentro de transaccion.
+- [x] CRUD de productos en PostgreSQL (base, con soft delete por `active=false`).
+- [x] Crear tabla `outbox_events` (modelo `OutboxEvent` + migracion aplicada).
+- [x] Publicar eventos de producto dentro de transaccion (`PRODUCT_CREATED|UPDATED|DEACTIVATED`).
 - [ ] Worker para proyectar a Mongo.
 - [ ] Endpoint lectura de productos para mobile.
 - [ ] Pruebas de consistencia Postgres -> Mongo.
@@ -140,21 +155,33 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 
-### Sprint actual
+### Sprint 0 (cerrado)
 
 - [x] DONE - Definir contrato DTO para `sync/push` y `sync/pull`. (ver `docs/api/SYNC_CONTRACTS.md`)
 - [x] DONE - Diseñar `outbox_events` (schema e indices). (ver `docs/api/OUTBOX_EVENTS.md` + modelo `OutboxEvent` en `prisma/schema.prisma`)
 - [x] DONE - Definir documento Mongo `products_read`. (ver `docs/api/MONGO_PRODUCTS_READ.md`)
 - [x] DONE - Definir politica de borrado de producto (soft delete). (ver `docs/api/PRODUCT_SOFT_DELETE_POLICY.md`)
-- [ ] TODO - Crear test cases minimos de idempotencia por `opId`.
+- [x] DONE - Crear test cases minimos de idempotencia por `opId`. (ver `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md`)
 
-### Proximas tareas
+### Sprint 1 (actual) - Implementacion + Documentacion API
 
-- [ ] TODO - Implementar CRUD `products` con validacion.
-- [ ] TODO - Implementar escritura a outbox en transaccion.
-- [ ] TODO - Implementar worker de proyeccion a Mongo.
-- [ ] TODO - Implementar endpoint lectura mobile con fallback.
-- [ ] TODO - Implementar primer corte de `sync/push`.
+- [x] DONE - Implementar CRUD `products` con validacion (DTOs, validacion global y soft delete). (ver `src/modules/products/`)
+- [x] DONE - Implementar escritura a outbox en transaccion para `PRODUCT_CREATED|UPDATED|DEACTIVATED`. (ver `products.service.ts` + `product-outbox.payload.ts`)
+- [ ] TODO - Implementar worker de proyeccion a Mongo (`products_read`) con retry/backoff.
+- [ ] TODO - Implementar endpoint lectura mobile de productos desde Mongo con fallback a PostgreSQL.
+- [ ] TODO - Implementar primer corte de `sync/push` con idempotencia por `opId`.
+- [ ] TODO - Implementar Swagger (`/api/docs`) con esquemas, ejemplos y codigos de error por endpoint.
+- [ ] TODO - Crear y versionar coleccion Postman con todos los endpoints vigentes (incluyendo variables de entorno, auth y ejemplos).
+
+### Proximas tareas (sprint 2+)
+
+- [ ] TODO - Generar `docs/FRONTEND_INTEGRATION_CONTEXT.md` (ultimo paso de la fase) con:
+  - inventario completo de endpoints (request/response/errores),
+  - flujos funcionales end-to-end (login, products, inventory, sync),
+  - contratos de datos para mobile (tipos y ejemplos reales),
+  - reglas offline (reintentos, estados de sync, idempotencia),
+  - recomendaciones de arquitectura Front (capas, manejo de cache, sincronizacion y manejo de conflictos),
+  - checklist de integracion para que el equipo Front/IA construya componentes alineados con el backend.
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -171,4 +198,5 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-03-26: MongoDB definido como read model para productos mobile.
 - 2026-03-26: Estrategia offline definida con push/pull + oplog + idempotencia por `opId`.
 - 2026-03-26: Se establece Outbox Pattern para consistencia Postgres -> Mongo.
+- 2026-04-03: Productos escriben `OutboxEvent` en la misma transaccion que create/update/soft delete.
 

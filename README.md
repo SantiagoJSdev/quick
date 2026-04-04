@@ -26,6 +26,40 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Quick Start (Database first)
+
+This backend requires PostgreSQL before starting Nest.
+
+1. Copy env template:
+
+```bash
+copy .env.example .env
+```
+
+2. Ensure PostgreSQL is running at `localhost:5432` with:
+- user: `postgres`
+- password: `postgres`
+- database: `gemini`
+
+3. If using Docker Desktop, start Docker first, then run:
+
+```bash
+docker compose up -d db
+```
+
+4. Run Prisma migration/generate:
+
+```bash
+npx prisma generate
+npx prisma migrate dev
+```
+
+5. Start API:
+
+```bash
+npm run start:dev
+```
+
 ## Project setup
 
 ```bash
