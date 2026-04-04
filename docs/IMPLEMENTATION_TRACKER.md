@@ -131,9 +131,9 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 - [x] Modelo datos: `Currency`, `ExchangeRate`, `BusinessSettings` + campos en documentos/inventario/movimientos (migracion `multi_currency_foundation`).
 - [x] Documentacion dominio (flujos, invariantes, DTOs, ejemplos, errores comunes): `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md`.
 - [x] Contexto Front actualizado: `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
-- [ ] Seed inicial `USD` / `VES` + `BusinessSettings` por tienda (o script admin).
+- [x] Seed inicial `USD` / `VES` + `BusinessSettings` por tienda existente + tasas ejemplo (`npm run db:seed`). Ver `prisma/seed.ts`.
 - [ ] Servicio conversion FX puro (tests unitarios: matriz monedas y redondeo).
-- [ ] API tasas del dia (`ExchangeRate` append-only) + lectura para POS.
+- [x] API tasas: `GET /exchange-rates/latest` + `POST /exchange-rates` (solo por tienda; header `X-Store-Id`; outbox -> Mongo `fx_rates_read`). Confirmacion venta pendiente.
 - [ ] Confirmacion compra/venta: aplicar reglas §4 dominio + idempotencia `opId`.
 - [ ] Devoluciones (politica tasa original vs tasa del dia) + documentar.
 - [ ] Pruebas integracion criticas (FX + offline + no mutacion historico).
@@ -208,6 +208,8 @@ Estado: `TODO | IN_PROGRESS | DONE | BLOCKED`
 - [x] DONE - Logs al arranque: PostgreSQL conectado + MongoDB (conectado, omitido sin URI, o error si URI invalida). (ver `PrismaService`, `MongoService`)
 - [x] DONE - Implementar worker de proyeccion a Mongo (`products_read`) con retry/backoff. (ver `src/outbox/outbox-mongo.worker.ts`)
 - [x] DONE - Fundacion **multi-moneda** (Venezuela): modelos `Currency`, `ExchangeRate`, `BusinessSettings`; campos FX/duales en ventas/compras/lineas/inventario/movimientos; doc dominio + `FRONTEND_INTEGRATION_CONTEXT.md` + migracion `multi_currency_foundation`. (logica confirmacion compra/venta y tests FX: pendiente M6)
+- [x] DONE - Endpoints `GET /stores/:storeId/business-settings`, `GET /exchange-rates/latest`, `POST /exchange-rates` + `npm run db:seed`.
+- [x] DONE - Guard global `X-Store-Id` (tienda + `BusinessSettings`); tasas solo por tienda; proyeccion Mongo `fx_rates_read` via outbox. Ver `StoreConfiguredGuard`, `FX_RATES_READ.md`.
 - [ ] TODO - Implementar endpoint lectura mobile de productos desde Mongo con fallback a PostgreSQL.
 - [ ] TODO - Implementar primer corte de `sync/push` con idempotencia por `opId`.
 - [ ] TODO - Implementar Swagger (`/api/docs`) con esquemas, ejemplos y codigos de error por endpoint.
@@ -237,4 +239,5 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-03: Arranque con log explicito de conexion PostgreSQL; Mongo opcional via `MONGODB_URI` con ping y manejo de error sin tumbar la API.
 - 2026-04-03: Worker `OutboxMongoWorker` consume `OutboxEvent` y hace upsert en Mongo `products_read` (poll configurable, batch, backoff).
 - 2026-04-04: Arquitectura multi-moneda (Venezuela) documentada; schema Prisma extendido (`Currency`, `ExchangeRate`, `BusinessSettings`, campos FX/duales en ventas/compras/inventario/movimientos); `FRONTEND_INTEGRATION_CONTEXT.md` y `MONGO_PRODUCTS_READ` alineados.
+- 2026-04-04: Guard global `X-Store-Id` + tienda con `BusinessSettings`; tasas solo por tienda; outbox proyecta `fx_rates_read` en Mongo; eliminada tasa global en API y variable `EXCHANGE_RATE_REQUIRE_STORE_ID`.
 

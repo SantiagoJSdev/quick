@@ -54,11 +54,40 @@ npx prisma generate
 npx prisma migrate dev
 ```
 
-5. Start API:
+5. (Opcional) Seed: monedas USD/VES, **crea una tienda por defecto si no hay ninguna**, `BusinessSettings`, tasa ejemplo y outbox. Comando correcto:
+
+```bash
+npm run db:seed
+```
+
+(No uses `npx run:db seed`; no existe. Si hace falta: `npx prisma generate` y luego el seed, con el API detenido si Windows bloquea el DLL de Prisma.)
+
+6. Start API:
 
 ```bash
 npm run start:dev
 ```
+
+## Inspeccionar PostgreSQL en Windows
+
+PostgreSQL usa **tablas** (no “colecciones”; eso es Mongo).
+
+1. **Prisma Studio** (recomendado para este proyecto): en la raiz del backend ejecuta `npx prisma studio` y abre el navegador. Veras `ExchangeRate`, `Currency`, `Store`, `Product`, `OutboxEvent`, etc.
+2. **pgAdmin** o **DBeaver**: conecta con los mismos datos que `DATABASE_URL` (host, puerto, usuario, contraseña, base `gemini`).
+3. **Docker**: si Postgres corre en contenedor, puedes usar `docker exec -it gemini-postgres psql -U postgres -d gemini` y luego `\dt` para listar tablas.
+
+## Mongo: `products_read` y `fx_rates_read`
+
+- **`products_read`**: proyeccion del catalogo (eventos de producto en outbox).
+- **`fx_rates_read`**: proyeccion de la **ultima tasa por tienda y par** (USD/VES, etc.) cuando se crea un `ExchangeRate` y el worker procesa el outbox. Sirve para lectura rapida / sync hacia dispositivos si expones Mongo al cliente (o replica local).
+- **PostgreSQL** sigue siendo la fuente maestra; Mongo es eventual.
+
+## Header `X-Store-Id` (obligatorio en casi toda la API)
+
+Salvo la ruta raiz (`GET /`), las rutas exigen el header **`X-Store-Id: <uuid-de-tienda>`** y que existan **`Store`** + **`BusinessSettings`** para esa tienda. Asi no se usan endpoints sin tienda configurada.
+
+- **`GET /api/v1/stores/:storeId/business-settings`**: el `X-Store-Id` debe coincidir con `:storeId`.
+- **Tasas**: solo por tienda (no hay tasa global `storeId null` en la API actual).
 
 ## Project setup
 

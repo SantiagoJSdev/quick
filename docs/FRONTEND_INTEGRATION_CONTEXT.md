@@ -14,6 +14,8 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 ## 2) API base
 
 - Prefijo: `/api/v1`
+- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. La ruta `GET /` (raiz) no lo exige.
+- Para `GET /api/v1/stores/:storeId/business-settings`, `X-Store-Id` debe ser **igual** a `:storeId`.
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
 - Productos hoy:
   - `POST /api/v1/products` — crear (genera `OutboxEvent` `PRODUCT_CREATED`).
@@ -21,6 +23,25 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
   - `GET /api/v1/products/:id`
   - `PATCH /api/v1/products/:id` — actualiza (`PRODUCT_UPDATED`).
   - `DELETE /api/v1/products/:id` — soft delete (`PRODUCT_DEACTIVATED`).
+
+**Configuracion de tienda (moneda funcional, moneda documento por defecto):**
+
+- `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`.  
+  - Si no existe fila `BusinessSettings` para esa tienda: `404` (ejecutar seed o crear settings en admin).
+
+**Tasa de referencia para UI (preview en Bs / USD):**
+
+- `GET /api/v1/exchange-rates/latest?baseCurrencyCode=USD&quoteCurrencyCode=VES` + header `X-Store-Id`.  
+  - Query opcional: `effectiveOn` (ISO date) — ultima tasa con `effectiveDate <= effectiveOn` (por defecto hoy UTC).  
+  - Solo tasas **de esa tienda** (no hay fallback global en API).  
+  - Respuesta incluye `rateQuotePerBase` como string y `convention` legible.
+
+**Alta manual de tasa (Postman / admin, append-only):**
+
+- `POST /api/v1/exchange-rates` + header `X-Store-Id` (la tasa se asocia a esa tienda). Body JSON:
+  - `baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase` (string), `effectiveDate` (ISO)
+  - opcional: `source`, `notes`
+- **PostgreSQL** + **outbox**; el worker proyecta a Mongo coleccion **`fx_rates_read`** (ver `docs/api/FX_RATES_READ.md`). Offline: ademas puede cachear `GET .../latest` en SQLite local.
 
 **Semantica de producto (multi-moneda):**
 
@@ -46,6 +67,8 @@ Resumen obligatorio para POS / mobile:
 > **1 `fxBaseCurrency` = `fxRateQuotePerBase` unidades de `fxQuoteCurrency`**
 
 Ejemplo: 1 USD = 36,50 VES → base `USD`, quote `VES`, rate `36.50`.
+
+**Referencia en pantalla (total USD + total Bs):** el front puede usar `GET .../exchange-rates/latest` para mostrar Bs **antes de confirmar**. Al **confirmar** venta, el snapshot debe persistirse en el documento (endpoint de ventas pendiente).
 
 ### DTO conceptual venta (cuando exista endpoint)
 

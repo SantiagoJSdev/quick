@@ -17,6 +17,9 @@ const PRODUCT_EVENTS = new Set([
   'PRODUCT_DEACTIVATED',
 ]);
 
+const EXCHANGE_RATE_AGGREGATE = 'ExchangeRate';
+const EXCHANGE_RATE_EVENTS = new Set(['EXCHANGE_RATE_UPSERTED']);
+
 const MAX_ATTEMPTS = 25;
 
 @Injectable()
@@ -106,45 +109,96 @@ export class OutboxMongoWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private dbName() {
+    return process.env.MONGODB_DATABASE_NAME?.trim() || 'quickmarket';
+  }
+
   private async processEvent(client: MongoClient, event: OutboxEvent) {
-    const dbName =
-      process.env.MONGODB_DATABASE_NAME?.trim() || 'quickmarket';
-    const coll = client.db(dbName).collection('products_read');
-
     try {
-      if (event.aggregateType !== PRODUCT_AGGREGATE) {
-        this.logger.warn(
-          `Outbox ${event.id}: skip unknown aggregateType=${event.aggregateType}`,
-        );
-        await this.markProcessed(event.id);
+      if (
+        event.aggregateType === PRODUCT_AGGREGATE &&
+        PRODUCT_EVENTS.has(event.eventType)
+      ) {
+        await this.processProductEvent(client, event);
         return;
       }
 
-      if (!PRODUCT_EVENTS.has(event.eventType)) {
-        this.logger.warn(
-          `Outbox ${event.id}: skip unknown eventType=${event.eventType}`,
-        );
-        await this.markProcessed(event.id);
+      if (
+        event.aggregateType === EXCHANGE_RATE_AGGREGATE &&
+        EXCHANGE_RATE_EVENTS.has(event.eventType)
+      ) {
+        await this.processExchangeRateEvent(client, event);
         return;
       }
 
-      const payload = event.payload as unknown;
-      if (!this.isProductPayload(payload)) {
-        throw new Error('Invalid outbox payload: missing product.id');
-      }
-
-      const doc = this.toProductsReadDoc(payload, event);
-      await coll.replaceOne({ _id: doc._id }, doc, { upsert: true });
-
-      await this.markProcessed(event.id);
-      this.logger.debug(
-        `Outbox ${event.id}: projected ${event.eventType} -> products_read (${doc.productId})`,
+      this.logger.warn(
+        `Outbox ${event.id}: unknown aggregate/event (${event.aggregateType}/${event.eventType}) — marked processed`,
       );
+      await this.markProcessed(event.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await this.markFailure(event, message);
       this.logger.warn(`Outbox ${event.id}: failed — ${message}`);
     }
+  }
+
+  private async processProductEvent(client: MongoClient, event: OutboxEvent) {
+    const coll = client.db(this.dbName()).collection('products_read');
+    const payload = event.payload as unknown;
+    if (!this.isProductPayload(payload)) {
+      throw new Error('Invalid outbox payload: missing product.id');
+    }
+
+    const doc = this.toProductsReadDoc(payload, event);
+    await coll.replaceOne({ _id: doc._id as never }, doc, { upsert: true });
+
+    await this.markProcessed(event.id);
+    this.logger.debug(
+      `Outbox ${event.id}: ${event.eventType} -> products_read (${doc.productId})`,
+    );
+  }
+
+  private async processExchangeRateEvent(
+    client: MongoClient,
+    event: OutboxEvent,
+  ) {
+    const coll = client.db(this.dbName()).collection('fx_rates_read');
+    const payload = event.payload as unknown;
+    if (!this.isExchangeRatePayload(payload)) {
+      throw new Error('Invalid outbox payload: missing exchangeRate.storeId');
+    }
+
+    const x = payload.exchangeRate;
+    const storeId = x.storeId as string;
+    const base = x.baseCurrencyCode as string;
+    const quote = x.quoteCurrencyCode as string;
+    const _id = `${storeId}_${base}_${quote}`;
+
+    const now = new Date().toISOString();
+    const doc: Record<string, unknown> = {
+      _id,
+      storeId,
+      baseCurrencyCode: base,
+      quoteCurrencyCode: quote,
+      rateQuotePerBase: x.rateQuotePerBase,
+      effectiveDate: x.effectiveDate,
+      source: x.source ?? null,
+      notes: x.notes ?? null,
+      postgresExchangeRateId: x.id,
+      convention: `1 ${base} = rateQuotePerBase ${quote}`,
+      sync: {
+        lastEventId: event.id,
+        lastEventType: event.eventType,
+        lastProjectedAt: now,
+      },
+    };
+
+    await coll.replaceOne({ _id: _id as never }, doc, { upsert: true });
+
+    await this.markProcessed(event.id);
+    this.logger.debug(
+      `Outbox ${event.id}: ${event.eventType} -> fx_rates_read (${_id})`,
+    );
   }
 
   private isProductPayload(
@@ -158,6 +212,25 @@ export class OutboxMongoWorker implements OnModuleInit, OnModuleDestroy {
       return false;
     }
     return typeof (prod as { id?: unknown }).id === 'string';
+  }
+
+  private isExchangeRatePayload(
+    p: unknown,
+  ): p is { exchangeRate: Record<string, unknown> } {
+    if (typeof p !== 'object' || p === null || !('exchangeRate' in p)) {
+      return false;
+    }
+    const x = (p as { exchangeRate: unknown }).exchangeRate;
+    if (typeof x !== 'object' || x === null) {
+      return false;
+    }
+    const o = x as Record<string, unknown>;
+    return (
+      typeof o.storeId === 'string' &&
+      typeof o.baseCurrencyCode === 'string' &&
+      typeof o.quoteCurrencyCode === 'string' &&
+      typeof o.rateQuotePerBase === 'string'
+    );
   }
 
   private toProductsReadDoc(
