@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -31,11 +32,18 @@ export class ProductsService {
 
   async create(dto: CreateProductDto) {
     return this.prisma.$transaction(async (tx) => {
+      const skuFinal = await this.resolveCreateSku(tx, dto.sku);
+      const barcodeVal = this.normalizeBarcodeInput(dto.barcode);
+
+      const { sku: _s, barcode: _b, price, cost, ...rest } = dto;
+
       const product = await tx.product.create({
         data: {
-          ...dto,
-          price: this.toDecimal(dto.price),
-          cost: this.toDecimal(dto.cost),
+          ...rest,
+          sku: skuFinal,
+          barcode: barcodeVal,
+          price: this.toDecimal(price),
+          cost: this.toDecimal(cost),
         },
         include: productOutboxInclude,
       });
@@ -207,13 +215,24 @@ export class ProductsService {
     await this.findOnePostgres(id);
 
     return this.prisma.$transaction(async (tx) => {
+      const { price, cost, sku, barcode, ...rest } = dto;
+      const data: Prisma.ProductUpdateInput = { ...rest };
+      if (price !== undefined) {
+        data.price = this.toDecimal(price);
+      }
+      if (cost !== undefined) {
+        data.cost = this.toDecimal(cost);
+      }
+      if (sku !== undefined) {
+        data.sku = sku.trim();
+      }
+      if (barcode !== undefined) {
+        data.barcode = barcode.trim() ? barcode.trim() : null;
+      }
+
       const product = await tx.product.update({
         where: { id },
-        data: {
-          ...dto,
-          price: this.toDecimal(dto.price),
-          cost: this.toDecimal(dto.cost),
-        },
+        data,
         include: productOutboxInclude,
       });
 
@@ -277,5 +296,57 @@ export class ProductsService {
       return undefined;
     }
     return new Prisma.Decimal(value);
+  }
+
+  /** Barcode: solo persiste si hay texto tras trim; si no, `null` (único sparse en Postgres). */
+  private normalizeBarcodeInput(raw?: string | null): string | null {
+    if (raw === undefined || raw === null) {
+      return null;
+    }
+    const t = raw.trim();
+    return t.length > 0 ? t : null;
+  }
+
+  private async bumpSkuCounter(tx: Prisma.TransactionClient): Promise<number> {
+    await tx.$executeRaw`
+      INSERT INTO "ProductSkuCounter" ("id", "nextNumber")
+      VALUES ('global', 0)
+      ON CONFLICT ("id") DO NOTHING
+    `;
+    const rows = await tx.$queryRaw<{ nextNumber: unknown }[]>`
+      UPDATE "ProductSkuCounter"
+      SET "nextNumber" = "nextNumber" + 1
+      WHERE "id" = 'global'
+      RETURNING "nextNumber"
+    `;
+    const n = rows[0]?.nextNumber;
+    return typeof n === 'bigint' ? Number(n) : Number(n);
+  }
+
+  private async allocateGeneratedSku(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const n = await this.bumpSkuCounter(tx);
+      const candidate = `SKU-${String(n).padStart(6, '0')}`;
+      const clash = await tx.product.findUnique({ where: { sku: candidate } });
+      if (!clash) {
+        return candidate;
+      }
+    }
+    throw new ConflictException(
+      'Could not allocate auto SKU after retries; set sku explicitly in the request body',
+    );
+  }
+
+  private async resolveCreateSku(
+    tx: Prisma.TransactionClient,
+    dtoSku?: string,
+  ): Promise<string> {
+    const t = dtoSku?.trim();
+    if (t) {
+      return t;
+    }
+    return this.allocateGeneratedSku(tx);
   }
 }

@@ -20,7 +20,7 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 - Para `GET /api/v1/stores/:storeId/business-settings`, `X-Store-Id` debe ser **igual** a `:storeId`.
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
 - Productos hoy:
-  - `POST /api/v1/products` — crear (genera `OutboxEvent` `PRODUCT_CREATED`).
+  - `POST /api/v1/products` — crear (genera `OutboxEvent` `PRODUCT_CREATED`). **`sku`** opcional: si falta o va vacío, el servidor asigna **`SKU-000001`**, `SKU-000002`, … **`barcode`** opcional; vacío → `null` (único solo si informado). No mezclar barcode↔sku en el cliente salvo confirmación del usuario. Detalle: **`docs/BACKEND_PRODUCT_SKU_BARCODE.md`**.
   - `GET /api/v1/products` — lista; `includeInactive=true|false`; lectura **Mongo** `products_read` por defecto con **fallback Postgres** (query `source=auto|mongo|postgres`, default `auto`). Respuesta incluye cabecera `X-Catalog-Source: mongo|postgres`.
   - `GET /api/v1/products/:id` — mismo criterio de origen; en `auto`, si no hay doc en Mongo se intenta Postgres (retraso del worker).
   - `PATCH /api/v1/products/:id` — actualiza (`PRODUCT_UPDATED`).
@@ -199,6 +199,7 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 | Idempotencia tests | `docs/qa/IDEMPOTENCY_OPID_TEST_CASES.md` |
 | Tracker | `docs/IMPLEMENTATION_TRACKER.md` |
 | Productos API | `src/modules/products/` |
+| SKU vs barcode (POS) | `docs/BACKEND_PRODUCT_SKU_BARCODE.md` |
 | Inventario API | `src/modules/inventory/` |
 | Ventas API | `src/modules/sales/` |
 | Historial ventas (listado) | `docs/BACKEND_SALES_HISTORY_API.md`, `GET /api/v1/sales` |

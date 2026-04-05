@@ -6,12 +6,16 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { ProductType } from '@prisma/client';
 
 export class UpdateProductDto {
   @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
+  @MinLength(1)
   @MaxLength(120)
   sku?: string;
 

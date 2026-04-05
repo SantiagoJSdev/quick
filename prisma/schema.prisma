@@ -93,6 +93,12 @@ model User {
   sales     Sale[]
 }
 
+/// Contador global para SKUs autogenerados (`SKU-000001`). Una fila `id = global`.
+model ProductSkuCounter {
+  id         String @id @default("global")
+  nextNumber Int    @default(0)
+}
+
 model Product {
   id             String     @id @default(uuid())
   sku            String     @unique
