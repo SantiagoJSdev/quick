@@ -13,6 +13,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SaleReturnsModule } from './modules/sale-returns/sale-returns.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { OpsModule } from './modules/ops/ops.module';
@@ -29,6 +30,7 @@ import { PrismaModule } from './prisma/prisma.module';
     InventoryModule,
     SalesModule,
     PurchasesModule,
+    SuppliersModule,
     SaleReturnsModule,
     ProductsModule,
     SyncModule,

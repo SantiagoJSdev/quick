@@ -96,8 +96,11 @@ export class PurchasesService {
     const supplier = await tx.supplier.findUnique({
       where: { id: dto.supplierId },
     });
-    if (!supplier) {
+    if (!supplier || supplier.storeId !== storeId) {
       throw new NotFoundException('Supplier not found');
+    }
+    if (!supplier.active) {
+      throw new BadRequestException('Supplier is inactive');
     }
 
     const rate = fx.fxRateQuotePerBase;
@@ -195,7 +198,9 @@ export class PurchasesService {
             product: { select: { sku: true, name: true } },
           },
         },
-        supplier: { select: { id: true, name: true, rif: true } },
+        supplier: {
+          select: { id: true, name: true, taxId: true, active: true },
+        },
       },
     });
   }

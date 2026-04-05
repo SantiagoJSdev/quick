@@ -43,7 +43,7 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 
 - `POST /api/v1/purchases` — recepción de mercancía: `supplierId` (UUID), `lines[]` (`productId`, `quantity`, `unitCost` en moneda documento), opcional `id` (idempotencia), `documentCurrencyCode`, `fxSnapshot` (misma forma que ventas). Crea `Purchase` estado `RECEIVED`, `dateReceived` = ahora, movimientos `IN_PURCHASE` y actualiza costo medio funcional del inventario.
 - `GET /api/v1/purchases/:id` — detalle con líneas y proveedor.
-- Proveedores: el seed crea un `Supplier` por defecto si la tabla está vacía; **no hay** `GET /suppliers` ni CRUD en API. Para `POST /purchases` hace falta un `supplierId` (UUID) obtenido de seed, Prisma Studio o admin. La app Flutter puede guardar proveedores **solo en local** hasta que exista endpoint.
+- Proveedores (por tienda, `X-Store-Id`): **`GET /api/v1/suppliers`** (lista paginada, `q`, `active`, `cursor`), **`POST /api/v1/suppliers`** (alta; el servidor devuelve `id`), **`GET/PATCH/DELETE`** `/suppliers/:id` (`DELETE` = soft `active=false`). Contrato: **`docs/BACKEND_SUPPLIERS_API_PROPOSAL.md`**. El seed crea un proveedor “general” **por tienda** si no hay ninguno. `POST /purchases` exige `supplierId` de **esa tienda** y proveedor **activo**.
 
 **Devoluciones de venta (M6):**
 
@@ -203,6 +203,7 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 | Inventario API | `src/modules/inventory/` |
 | Ventas API | `src/modules/sales/` |
 | Historial ventas (listado) | `docs/BACKEND_SALES_HISTORY_API.md`, `GET /api/v1/sales` |
+| Proveedores (CRUD / lista) | `docs/BACKEND_SUPPLIERS_API_PROPOSAL.md`, `src/modules/suppliers/` |
 | Registro POS (`POSDevice`) | `src/modules/pos-device/pos-device.service.ts` (ventas + sync) |
 | Compras API | `src/modules/purchases/` |
 | Devoluciones venta | `src/modules/sale-returns/` + `docs/api/RETURNS_POLICY.md` |
@@ -499,11 +500,17 @@ Online sin offline: omitir `fxSource` o no usar `POS_OFFLINE`; el servidor contr
 }
 ```
 
+### 13.9c Proveedores → `GET /suppliers` / `POST /suppliers`
+
+**POST** (201): `{ "name": "Mi proveedor", "taxId": "J-123", "phone": "0414..." }` → respuesta incluye `id` para usar en compras.
+
+**GET** por defecto: `{ "items": [...], "nextCursor": null, "meta": { "limit", "hasMore", "activeFilter" } }`.
+
 ### 13.10 Compra / recepción → `POST /purchases`
 
 ```json
 {
-  "supplierId": "supplier-uuid-del-seed",
+  "supplierId": "uuid-devuelto-por-get-o-post-suppliers",
   "documentCurrencyCode": "VES",
   "lines": [
     {

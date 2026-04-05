@@ -206,17 +206,25 @@ model StockMovement {
 
 model Supplier {
   id        String    @id @default(uuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   name      String
-  rif       String?
+  /// Identificador fiscal (RIF/CUIT/NIT); columna legada `rif` en Postgres.
+  taxId     String?   @map("rif")
   email     String?
   phone     String?
   address   String?
+  notes     String?
+  active    Boolean   @default(true)
 
   products  Product[]
   purchases Purchase[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([storeId, active])
+  @@index([storeId, name])
 }
 
 model Purchase {
@@ -282,6 +290,7 @@ model Store {
   exchangeRates    ExchangeRate[]
   storeSyncState   StoreSyncState?
   syncOperations   SyncOperation[]
+  suppliers        Supplier[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
