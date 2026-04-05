@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { PosDeviceService } from '../pos-device/pos-device.service';
 import { PurchasesService } from '../purchases/purchases.service';
 import { SaleReturnsService } from '../sale-returns/sale-returns.service';
 import { SalesService } from '../sales/sales.service';
@@ -23,7 +24,8 @@ const run = process.env.RUN_INTEGRATION === '1';
     const inventory = new InventoryService(prisma);
     exchangeRates = new ExchangeRatesService(prisma);
     const storeFx = new StoreFxSnapshotService(exchangeRates);
-    const sales = new SalesService(prisma, storeFx, inventory);
+    const posDevice = new PosDeviceService();
+    const sales = new SalesService(prisma, storeFx, inventory, posDevice);
     const purchases = new PurchasesService(prisma, storeFx, inventory);
     const saleReturns = new SaleReturnsService(
       prisma,
@@ -37,6 +39,7 @@ const run = process.env.RUN_INTEGRATION === '1';
       purchases,
       saleReturns,
       storeFx,
+      posDevice,
     );
 
     const store = await prisma.store.findFirst({

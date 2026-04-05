@@ -73,6 +73,7 @@ export function parseSalePayload(
     lines,
     userId: typeof s.userId === 'string' ? s.userId : undefined,
     deviceId: typeof s.deviceId === 'string' ? s.deviceId : undefined,
+    appVersion: typeof s.appVersion === 'string' ? s.appVersion : undefined,
     fxSnapshot,
   };
 

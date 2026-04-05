@@ -15,7 +15,7 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 ## 2) API base
 
 - Prefijo: `/api/v1`
-- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. No lo exigen: `GET /` (raiz) y **`GET /api/v1/ops/metrics`** (M5). Ese endpoint puede exigir **`X-Ops-Api-Key`** o **`Authorization: Bearer`** si el servidor tiene `OPS_API_KEY`; opcional allowlist por IP (`README`).
+- **Header obligatorio** en casi todos los endpoints: `X-Store-Id: <uuid>` de una tienda que exista y tenga **`BusinessSettings`**. No lo exigen: `GET /` (raiz) y **`GET /api/v1/ops/metrics`** (M5). Ese endpoint puede exigir **`X-Ops-Api-Key`** o **`Authorization: Bearer`** si el servidor tiene `OPS_API_KEY`; opcional allowlist por IP (`README`). **Onboarding POS** (crear tienda desde la app): con `STORE_ONBOARDING_ENABLED=1` en el servidor, `PUT /api/v1/stores/:storeId` y `PUT /api/v1/stores/:storeId/business-settings` **sí** exigen `X-Store-Id` igual al `:storeId` pero **no** exigen que la tienda ya tenga settings (detalle: `docs/BACKEND_STORE_ONBOARDING.md`).
 - **Trazabilidad (M0):** opcional `X-Request-Id`; si no se envía, el servidor genera uno. Siempre se devuelve en cabecera. Errores HTTP: JSON `{ statusCode, error, message[], requestId }`.
 - Para `GET /api/v1/stores/:storeId/business-settings`, `X-Store-Id` debe ser **igual** a `:storeId`.
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
@@ -35,7 +35,8 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 
 **Ventas (M4):**
 
-- `POST /api/v1/sales` — confirma venta: `lines[]` (`productId`, `quantity`, `price` string, opcional `discount`), opcional `id` (UUID cliente; si ya existe venta con ese id en la tienda, respuesta idempotente sin duplicar stock), `documentCurrencyCode`, `userId`, `deviceId`, `fxSnapshot` (`baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` `YYYY-MM-DD`, opcional `fxSource` e.g. `POS_OFFLINE`). Descuenta stock (`OUT_SALE`) y guarda importes documento + funcional en cabecera y líneas.
+- `GET /api/v1/sales` — historial de la tienda (cabecera `X-Store-Id`). Query opcional: `dateFrom`, `dateTo` (`YYYY-MM-DD` en **zona `Store.timezone`**, o UTC si la tienda no tiene timezone), `deviceId`, `limit` (default 50, max 200), `cursor` (siguiente página; opaco), `format`=`object`|`array`. Por defecto respuesta **`{ items, nextCursor, meta }`** con `meta.timezone`, fechas efectivas y texto de interpretación; con `format=array` solo el array (sin paginar por cursor). Máximo **31 días** calendario inclusive entre from/to (o defaults documentados). Orden: más reciente primero. Detalle líneas: `GET /sales/:id`. Contrato detallado: **`docs/BACKEND_SALES_HISTORY_API.md`**.
+- `POST /api/v1/sales` — confirma venta: `lines[]` (`productId`, `quantity`, `price` string, opcional `discount`), opcional `id` (UUID cliente; si ya existe venta con ese id en la tienda, respuesta idempotente sin duplicar stock), `documentCurrencyCode`, `userId`, `deviceId`, opcional `appVersion`, `fxSnapshot` (`baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` `YYYY-MM-DD`, opcional `fxSource` e.g. `POS_OFFLINE`). Si envías **`deviceId`**, el servidor **crea o actualiza** el registro `POSDevice` de esa tienda (`lastSeen`, `appVersion` si viene) y **enlaza la venta**; si ese `deviceId` ya está en **otra** tienda → **409 Conflict**. Sin `deviceId`, la venta se guarda igual pero sin terminal en cabecera. Descuenta stock (`OUT_SALE`) y guarda importes documento + funcional en cabecera y líneas.
 - `GET /api/v1/sales/:id` — detalle con líneas (misma tienda que `X-Store-Id`).
 
 **Compras / recepción (M5/M6 complemento):**
@@ -53,7 +54,12 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 **Configuracion de tienda (moneda funcional, moneda documento por defecto):**
 
 - `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`.  
-  - Si no existe fila `BusinessSettings` para esa tienda: `404` (ejecutar seed o crear settings en admin).
+  - Si no existe fila `BusinessSettings` para esa tienda: `404` (ejecutar seed, usar onboarding PUT abajo, o admin).
+
+**Onboarding desde el POS** (servidor con `STORE_ONBOARDING_ENABLED=1`; si no, **403**):
+
+- `PUT /api/v1/stores/:storeId` — body `{ "name", "type": "main"|"branch" }`; `upsert` de `Store` con `id = :storeId` (UUID generado en el móvil). Cabecera `X-Store-Id` = `:storeId`.
+- `PUT /api/v1/stores/:storeId/business-settings` — body `{ "functionalCurrencyCode", "defaultSaleDocCurrencyCode" }` (códigos existentes en `Currency`, ej. seed). Misma cabecera. Respuesta **mismo shape** que el `GET` de business-settings.
 
 **Tasa de referencia para UI (preview en Bs / USD):**
 
@@ -101,7 +107,11 @@ Ejemplo: 1 USD = 36,50 VES → base `USD`, quote `VES`, rate `36.50`.
 Además de líneas (`productId`, `quantity`, `price`, `discount` opcional), enviar:
 
 - `documentCurrencyCode` opcional (default desde `BusinessSettings`)
+- `deviceId` opcional (REST) / recomendado: al confirmar venta **online**, con `deviceId` el backend registra el POS igual que en sync (**no** hace falta “registrar dispositivo al abrir la app” solo para poder cobrar; sigue siendo válido mandar `appVersion` en el primer sync o venta).
+- `appVersion` opcional (string corto, ej. `1.2.0`): se persiste en `POSDevice` cuando envías `deviceId`.
 - `fxSnapshot`: `baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` (`YYYY-MM-DD`), `fxSource` opcional (`POS_OFFLINE` usa la tasa del cliente; el par debe coincidir con una fila `ExchangeRate` de la tienda, ver `StoreFxSnapshotService`)
+
+En **sync** `SALE`, si el payload no trae `sale.deviceId`, el servidor usa el `deviceId` del batch (mismo criterio que antes).
 
 El backend resuelve moneda funcional desde `BusinessSettings` y completa totales e importes por línea en documento y funcional.
 
@@ -118,7 +128,7 @@ Especificacion: `docs/api/MONGO_PRODUCTS_READ.md`.
 
 Contrato: `docs/api/SYNC_CONTRACTS.md`.
 
-- `POST /api/v1/sync/push` — batch hasta 200 ops, `deviceId`, `opId` UUID v4, `opType` `NOOP` | `SALE` | `SALE_RETURN` | `PURCHASE_RECEIVE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
+- `POST /api/v1/sync/push` — batch hasta 200 ops, `deviceId` (obligatorio), opcional `appVersion` (se guarda en `POSDevice` junto con `lastSeen` al inicio del push), `opId` UUID v4, `opType` `NOOP` | `SALE` | `SALE_RETURN` | `PURCHASE_RECEIVE` | `INVENTORY_ADJUST`. Respuesta: `acked` (con `serverVersion` **por tienda**, distinto del pull), `skipped`, `failed`. Requiere `X-Store-Id`. Ver `docs/api/SYNC_CONTRACTS.md`.
 - `GET /api/v1/sync/pull?since=&limit=` — cambios del servidor desde el último `serverVersion` del **log global** (`ServerChangeLog`): `PRODUCT_CREATED` | `PRODUCT_UPDATED` | `PRODUCT_DEACTIVATED` con `payload: { productId, fields }`. `limit` default 500, max 500. Guardar `toVersion` como siguiente `since`. Solo entran productos **creados/actualizados tras desplegar este log** (histórico previo no se backfildea).
 - Cada operacion lleva `opId` (UUID v4).
 - **Ventas offline** deben incluir bloque **FX** igual que venta online confirmada.
@@ -145,7 +155,9 @@ Contrato: `docs/api/SYNC_CONTRACTS.md`.
 ## 8) Multi-dispositivo (varias instalaciones de la app)
 
 - Varios teléfonos/tablets pueden operar la **misma tienda** usando el mismo `X-Store-Id`.
-- Cada instalación debe generar y conservar un **`deviceId`** (UUID) único; enviarlo en **`POST /api/v1/sales`** (`deviceId` opcional pero recomendado) y en **`POST /api/v1/sync/push`** (obligatorio en el DTO de sync). El servidor registra/actualiza `POSDevice` por `deviceId`.
+- Cada instalación debe generar y conservar un **`deviceId`** (UUID o string estable único por instalación); enviarlo en **`POST /api/v1/sales`** (recomendado) y en **`POST /api/v1/sync/push`** (obligatorio). Con cada venta o push, el servidor hace **upsert** de `POSDevice` para esa tienda: `lastSeen`, y **`appVersion`** si envías el campo (body de venta o cuerpo del push).
+- Un mismo **`deviceId` no puede** estar registrado en dos tiendas distintas: segundo registro → **409 Conflict** (“registered to another store”).
+- **¿Al abrir la app o al vender?** Con el cambio actual, **basta con enviar `deviceId` en la primera venta online** o en el **primer `sync/push`**; no es obligatorio un endpoint aparte de “hello device”. Opcionalmente podéis llamar a `sync/push` con un `NOOP` al arrancar para refrescar `lastSeen` sin documentos.
 - La idempotencia de operaciones va por **`opId`** (sync) y por **`id`** de documento (venta/compra) cuando aplique; reintentos no duplican stock.
 
 ## 9) Seguridad resumida (cliente móvil)
@@ -189,10 +201,13 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 | Productos API | `src/modules/products/` |
 | Inventario API | `src/modules/inventory/` |
 | Ventas API | `src/modules/sales/` |
+| Historial ventas (listado) | `docs/BACKEND_SALES_HISTORY_API.md`, `GET /api/v1/sales` |
+| Registro POS (`POSDevice`) | `src/modules/pos-device/pos-device.service.ts` (ventas + sync) |
 | Compras API | `src/modules/purchases/` |
 | Devoluciones venta | `src/modules/sale-returns/` + `docs/api/RETURNS_POLICY.md` |
 | FX snapshot tienda | `src/modules/exchange-rates/store-fx-snapshot.service.ts` |
 | Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, `OpsAuthGuard`, scheduler) |
+| Onboarding tienda desde POS | `docs/BACKEND_STORE_ONBOARDING.md`, `PUT /stores/:id`, `PUT /stores/:id/business-settings` |
 | Errores + requestId M0 | `src/common/filters/api-exception.filter.ts`, `src/common/middleware/request-id.middleware.ts` |
 | Worker Mongo | `src/outbox/outbox-mongo.worker.ts` |
 | Ejemplos JSON por pantalla + FX ampliado | §**13** y §**14** (final de este archivo) |
@@ -200,6 +215,32 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 ## 13) Ejemplos JSON por pantalla / flujo (referencia front)
 
 Los cuerpos siguen la API real; los UUID y números son **ilustrativos**. Cabeceras típicas: `X-Store-Id: <uuid-tienda>`, `Content-Type: application/json`, opcional `X-Request-Id`.
+
+### 13.0 Onboarding — crear tienda y settings (PUT, flag servidor)
+
+Solo con `STORE_ONBOARDING_ENABLED=1`. Cabecera: `X-Store-Id` = mismo UUID que `:storeId` en la URL.
+
+**PUT** `/api/v1/stores/550e8400-e29b-41d4-a716-446655440099`
+
+```json
+{
+  "name": "Mi sucursal",
+  "type": "main"
+}
+```
+
+**Respuesta 200** (objeto `Store`): incluye `id`, `name`, `type`, `createdAt`, `updatedAt`, etc.
+
+**PUT** `/api/v1/stores/550e8400-e29b-41d4-a716-446655440099/business-settings`
+
+```json
+{
+  "functionalCurrencyCode": "USD",
+  "defaultSaleDocCurrencyCode": "VES"
+}
+```
+
+**Respuesta 200:** igual que **§13.2** (`GET` business-settings). Después de esto, el resto de la API con `X-Store-Id` de esa tienda pasa el `StoreConfiguredGuard`.
 
 ### 13.1 Error HTTP (formato M0)
 
@@ -403,6 +444,7 @@ Ejemplo de **una línea** (estructura según servicio; incluye producto embebido
 {
   "documentCurrencyCode": "VES",
   "deviceId": "pos-device-uuid-estable-por-app",
+  "appVersion": "1.2.0",
   "lines": [
     {
       "productId": "prod-uuid-1",
@@ -423,7 +465,38 @@ Ejemplo de **una línea** (estructura según servicio; incluye producto embebido
 
 Online sin offline: omitir `fxSource` o no usar `POS_OFFLINE`; el servidor contrasta la tasa (±0,5%).
 
+`appVersion` es opcional; `deviceId` registra el terminal en esta tienda en la misma transacción que la venta.
+
 **Response:** venta con `saleLines`, totales `totalDocument`, `totalFunctional`, campos `fx*` en cabecera (Decimal como string).
+
+### 13.9b Historial ventas → `GET /sales?dateFrom=&dateTo=&deviceId=&limit=&cursor=`
+
+`dateFrom` / `dateTo` = calendario en zona **`meta.timezone`** (tienda). Respuesta por defecto:
+
+```json
+{
+  "items": [
+    {
+      "id": "sale-uuid",
+      "createdAt": "2026-04-05T14:30:00.000Z",
+      "documentCurrencyCode": "VES",
+      "totalDocument": "182.50",
+      "totalFunctional": "5.0",
+      "deviceId": "pos-device-uuid",
+      "status": "CONFIRMED"
+    }
+  ],
+  "nextCursor": null,
+  "meta": {
+    "timezone": "America/Caracas",
+    "dateFrom": "2026-04-01",
+    "dateTo": "2026-04-07",
+    "rangeInterpretation": "Calendar dates …",
+    "limit": 50,
+    "hasMore": false
+  }
+}
+```
 
 ### 13.10 Compra / recepción → `POST /purchases`
 
@@ -479,6 +552,7 @@ Online sin offline: omitir `fxSource` o no usar `POS_OFFLINE`; el servidor contr
 ```json
 {
   "deviceId": "pos-device-uuid-estable-por-app",
+  "appVersion": "1.2.0",
   "ops": [
     {
       "opId": "11111111-2222-4333-8444-555555555555",

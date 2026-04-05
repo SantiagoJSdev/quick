@@ -3,6 +3,7 @@ import type { PurchasesService } from '../purchases/purchases.service';
 import type { SaleReturnsService } from '../sale-returns/sale-returns.service';
 import type { SalesService } from '../sales/sales.service';
 import type { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
+import type { PosDeviceService } from '../pos-device/pos-device.service';
 import { SyncService } from './sync.service';
 
 const STORE_ID = '10000000-0000-4000-8000-000000000001';
@@ -31,6 +32,10 @@ function buildServiceWithPrisma(
     resolveFxSnapshot: jest.fn(),
   } as unknown as StoreFxSnapshotService;
 
+  const posDevice = {
+    touchOrRegister: jest.fn(),
+  } as unknown as PosDeviceService;
+
   return {
     service: new SyncService(
       prisma,
@@ -39,6 +44,7 @@ function buildServiceWithPrisma(
       purchases,
       saleReturns,
       storeFx,
+      posDevice,
     ),
     inventory,
     sales,

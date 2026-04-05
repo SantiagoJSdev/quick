@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import {
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { SalesListQueryDto } from './dto/sales-list-query.dto';
 import { SalesService } from './sales.service';
 
 @ApiTags('sales')
@@ -40,6 +42,24 @@ export class SalesController {
       throw new InternalServerErrorException('Missing store context');
     }
     return this.sales.create(storeId, dto);
+  }
+
+  /** Historial de ventas (antes de `:id` para no capturar "id" como UUID). */
+  @Get()
+  @ApiOkResponse({
+    description:
+      'Por defecto `{ items, nextCursor, meta }`. Con `format=array`, solo el array de ventas (sin paginación por cursor).',
+  })
+  async list(@Req() req: Request, @Query() query: SalesListQueryDto) {
+    const storeId = req.storeContext?.storeId;
+    if (!storeId) {
+      throw new InternalServerErrorException('Missing store context');
+    }
+    const r = await this.sales.listHistory(storeId, query);
+    if (query.format === 'array') {
+      return r.items;
+    }
+    return r;
   }
 
   @Get(':id')

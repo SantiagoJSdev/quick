@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:integration": "cross-env RUN_INTEGRATION=1 jest",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset --force",
+    "db:reset:dev": "cross-env ALLOW_DEV_DB_RESET=1 ts-node --transpile-only scripts/dev-reset-databases.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -32,6 +34,7 @@
     "@nestjs/swagger": "^7.4.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "luxon": "^3.7.2",
     "mongodb": "^7.1.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.2"
@@ -48,6 +51,7 @@
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "cross-env": "^10.1.0",
+    "dotenv": "^17.4.0",
     "eslint": "^8.0.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.0",

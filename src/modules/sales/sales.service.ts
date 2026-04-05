@@ -10,7 +10,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { PosDeviceService } from '../pos-device/pos-device.service';
 import type { CreateSaleDto } from './dto/create-sale.dto';
+import type { SalesListQueryDto } from './dto/sales-list-query.dto';
+import { decodeSaleListCursor, encodeSaleListCursor } from './sales-list-cursor';
+import { resolveSaleListUtcRange } from './sales-list-range';
 
 /** Totales en funcional vía `convertAmountDocumentToFunctional` (Decimal sin redondeo intermedio). */
 @Injectable()
@@ -19,6 +23,7 @@ export class SalesService {
     private readonly prisma: PrismaService,
     private readonly storeFx: StoreFxSnapshotService,
     private readonly inventory: InventoryService,
+    private readonly posDevice: PosDeviceService,
   ) {}
 
   /** Confirmación de venta + líneas + `OUT_SALE` + descuento inventario (una transacción). */
@@ -180,13 +185,13 @@ export class SalesService {
     }
 
     let deviceId: string | null = null;
-    if (dto.deviceId) {
-      const dev = await tx.pOSDevice.findUnique({
-        where: { deviceId: dto.deviceId },
-      });
-      if (dev && dev.storeId === storeId) {
-        deviceId = dto.deviceId;
-      }
+    if (dto.deviceId != null && dto.deviceId.trim() !== '') {
+      deviceId = await this.posDevice.touchOrRegister(
+        tx,
+        storeId,
+        dto.deviceId,
+        { appVersion: dto.appVersion },
+      );
     }
 
     return tx.sale.create({
@@ -217,5 +222,93 @@ export class SalesService {
       where: { id: saleId, storeId },
       include: { saleLines: { include: { product: { select: { sku: true, name: true } } } } },
     });
+  }
+
+  /**
+   * Historial paginado por `createdAt` + `id` (desc). Fechas calendario en `Store.timezone`.
+   */
+  async listHistory(storeId: string, query: SalesListQueryDto) {
+    if (query.format === 'array' && query.cursor?.trim()) {
+      throw new BadRequestException(
+        'format=array does not support cursor pagination; omit cursor or use format=object (default)',
+      );
+    }
+
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { timezone: true },
+    });
+    if (!store) {
+      throw new NotFoundException('Store not found');
+    }
+
+    const { startUtc, endUtc, meta } = resolveSaleListUtcRange(
+      store.timezone,
+      query.dateFrom,
+      query.dateTo,
+    );
+
+    const limit = query.limit ?? 50;
+    const deviceTrim =
+      query.deviceId != null && query.deviceId.trim() !== ''
+        ? query.deviceId.trim()
+        : undefined;
+
+    const cursorDecoded = query.cursor?.trim()
+      ? decodeSaleListCursor(query.cursor.trim())
+      : null;
+
+    const andParts: Prisma.SaleWhereInput[] = [
+      { storeId },
+      { createdAt: { gte: startUtc, lte: endUtc } },
+    ];
+    if (deviceTrim) {
+      andParts.push({ deviceId: deviceTrim });
+    }
+    if (cursorDecoded) {
+      andParts.push({
+        OR: [
+          { createdAt: { lt: cursorDecoded.createdAt } },
+          {
+            AND: [
+              { createdAt: cursorDecoded.createdAt },
+              { id: { lt: cursorDecoded.id } },
+            ],
+          },
+        ],
+      });
+    }
+
+    const rows = await this.prisma.sale.findMany({
+      where: { AND: andParts },
+      select: {
+        id: true,
+        createdAt: true,
+        documentCurrencyCode: true,
+        totalDocument: true,
+        totalFunctional: true,
+        deviceId: true,
+        status: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last != null ? encodeSaleListCursor(last) : null;
+
+    return {
+      items: page,
+      nextCursor,
+      meta: {
+        ...meta,
+        limit,
+        hasMore,
+        ...(deviceTrim ? { deviceIdFilter: deviceTrim } : {}),
+      },
+    };
   }
 }

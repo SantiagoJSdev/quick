@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -47,6 +48,16 @@ export class SyncPushDto {
   @ApiProperty({ example: 'device-qa-001' })
   @IsString()
   deviceId!: string;
+
+  @ApiPropertyOptional({
+    example: '1.2.0',
+    description:
+      'Opcional. Se guarda en `POSDevice` junto con `lastSeen` en cada push.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  appVersion?: string;
 
   @ApiPropertyOptional({ example: '2026-03-26T18:00:00.000Z' })
   @IsOptional()

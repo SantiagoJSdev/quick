@@ -66,11 +66,24 @@ export class CreateSaleDto {
   @IsUUID('4')
   userId?: string;
 
-  @ApiPropertyOptional({ description: 'deviceId POS (debe existir para la tienda)' })
+  @ApiPropertyOptional({
+    description:
+      'Identificador estable del terminal (ej. UUID de instalación). Si se envía, el servidor registra o actualiza el POS para esta tienda (`lastSeen`) y enlaza la venta. Si el mismo `deviceId` ya está en otra tienda → 409.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
   deviceId?: string;
+
+  @ApiPropertyOptional({
+    example: '1.2.0',
+    description:
+      'Opcional. Versión de la app; se guarda en el registro del dispositivo al confirmar la venta.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  appVersion?: string;
 
   @ApiPropertyOptional({
     description:

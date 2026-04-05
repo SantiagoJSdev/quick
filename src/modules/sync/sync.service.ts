@@ -17,6 +17,7 @@ import { SalesService } from '../sales/sales.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PosDeviceService } from '../pos-device/pos-device.service';
 import type { SyncPushDto, SyncPushOpDto } from './dto/sync-push.dto';
 import { stableJsonStringify } from './stable-json';
 
@@ -51,6 +52,7 @@ export class SyncService {
     private readonly purchases: PurchasesService,
     private readonly saleReturns: SaleReturnsService,
     private readonly storeFx: StoreFxSnapshotService,
+    private readonly posDevice: PosDeviceService,
   ) {}
 
   /**
@@ -112,7 +114,9 @@ export class SyncService {
 
     await this.prisma.$transaction(
       async (tx) => {
-        await this.touchPosDevice(tx, storeId, dto.deviceId);
+        await this.posDevice.touchOrRegister(tx, storeId, dto.deviceId, {
+          appVersion: dto.appVersion,
+        });
         await tx.storeSyncState.upsert({
           where: { storeId },
           create: { storeId, serverVersion: 0 },
@@ -135,29 +139,6 @@ export class SyncService {
     );
 
     return { serverTime: new Date().toISOString(), acked, skipped, failed };
-  }
-
-  private async touchPosDevice(
-    tx: Prisma.TransactionClient,
-    storeId: string,
-    deviceId: string,
-  ) {
-    const dev = await tx.pOSDevice.findUnique({ where: { deviceId } });
-    if (dev) {
-      if (dev.storeId !== storeId) {
-        throw new ConflictException(
-          'This device is registered to another store',
-        );
-      }
-      await tx.pOSDevice.update({
-        where: { deviceId },
-        data: { lastSeen: new Date() },
-      });
-      return;
-    }
-    await tx.pOSDevice.create({
-      data: { deviceId, storeId },
-    });
   }
 
   private async processOneOp(
@@ -450,7 +431,8 @@ export class SyncService {
       } catch (err) {
         if (
           err instanceof BadRequestException ||
-          err instanceof NotFoundException
+          err instanceof NotFoundException ||
+          err instanceof ConflictException
         ) {
           await tx.syncOperation.create({
             data: {

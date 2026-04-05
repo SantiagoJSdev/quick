@@ -15,7 +15,7 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Quick Market API')
     .setDescription(
-      'Backend POS / mini-mercado: PostgreSQL como fuente de verdad, Mongo opcional para read models (catálogo, FX). Casi todos los endpoints requieren el header X-Store-Id; excepción: GET /api/v1/ops/metrics (observabilidad M5), protegido opcionalmente con OPS_API_KEY / OPS_IP_ALLOWLIST.',
+      'Backend POS / mini-mercado: PostgreSQL como fuente de verdad, Mongo opcional para read models (catálogo, FX). Casi todos los endpoints requieren el header X-Store-Id; excepciones: GET /api/v1/ops/metrics (M5, OPS_API_KEY opcional) y, si STORE_ONBOARDING_ENABLED=1, PUT /api/v1/stores/:id y PUT .../business-settings para alta de tienda desde el POS (ver docs/BACKEND_STORE_ONBOARDING.md).',
     )
     .setVersion('1.0')
     .addApiKey(

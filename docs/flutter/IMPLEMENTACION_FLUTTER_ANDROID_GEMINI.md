@@ -62,6 +62,10 @@ Luego en Android Studio: **File → Open** → selecciona la carpeta `quick_mark
 2. Clic en el triángulo verde **Run** ▶.
 3. Deberías ver la app de demostración en el dispositivo. Si falla, revisa la pestaña **Run** / **Build** para el error concreto.
 
+### 0.5 Windows: “Building with plugins requires symlink support”
+
+Con plugins (`shared_preferences`, etc.) Flutter puede necesitar **symlinks**. En Windows actívalo con **Modo de desarrollador**: `Win+R` → `ms-settings:developers` → **Developer Mode** ON. Reinicia Android Studio, luego en el proyecto `flutter clean` y `flutter pub get`, y vuelve a **Run**.
+
 ---
 
 ## 1) Qué vas a construir (alcance por sprint)
@@ -121,15 +125,41 @@ lib/
 
 ### 2.5 Paquetes Flutter recomendados (añadir en `pubspec.yaml`)
 
-- `http` o `dio` — REST.  
-- `flutter_secure_storage` o `shared_preferences` — `deviceId`, `storeId` dev.  
-- `mobile_scanner` o `google_mlkit_barcode_scanning` — QR/código en sprint 2.  
-- `intl` — formatos de moneda y fechas.  
-- Opcional: `decimal` / manejo de `String` para montos como indica el backend.
+Abre **`pubspec.yaml`** en la raíz del proyecto Flutter (junto a `lib/`). Bajo la clave **`dependencies:`** añade (o fusiona con lo que ya haya). **Mantén la indentación con 2 espacios.**
+
+Ejemplo mínimo para sprint 1 (REST + guardar `storeId`):
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.0
+  shared_preferences: ^2.2.0
+```
+
+Alternativa a `http`: `dio: ^5.4.0` (elige **uno** de los dos para empezar).
+
+Guarda el archivo. Android Studio suele ejecutar **Pub get** solo; si no: clic derecho en `pubspec.yaml` → **Flutter → Pub get**, o en terminal del proyecto: `flutter pub get`.
+
+**Más adelante:** `mobile_scanner` o ML Kit (sprint 2 QR), `intl` (formato moneda), etc.
 
 ---
 
 ## 3) Cómo usar Gemini paso a paso (dónde “pegar” y cómo chatear)
+
+### 3.0 Dónde está “el chat” de Gemini (tienes varias opciones)
+
+No hay un solo lugar obligatorio; usa el que te funcione en tu PC y país.
+
+| Dónde | Cómo se abre | Notas |
+|-------|----------------|-------|
+| **Gemini en el navegador** | [gemini.google.com](https://gemini.google.com) o [Google AI Studio](https://aistudio.google.com/) | Es un **chat web**. Sube o pega `FRONTEND_INTEGRATION_CONTEXT.md`; pide código Dart y lo copias a Android Studio. |
+| **App Gemini** (móvil) | App oficial Google Gemini | Mismo idea: pegar texto o compartir archivo si la app lo permite; cómodo para ideas, menos para pegar archivos grandes. |
+| **Android Studio** | Menú **View → Tool Windows** y busca **Gemini**, o icono de **Gemini / asistente IA** en la barra lateral derecha (según versión y región). También **Help → Find Action** (`Ctrl+Shift+A`) y escribe **Gemini**. | Si **no** aparece: tu región o la build puede no incluirlo; usa el **navegador**. |
+| **Cursor** (si codificas ahí) | Chat del editor + `@` archivos | Puedes `@docs/backend/FRONTEND_INTEGRATION_CONTEXT.md` y pedir implementación. |
+
+**Flujo típico:** documentos ya en `docs/backend/` del proyecto + **chat en el navegador (Gemini)** con el archivo adjunto o pegado + copiar respuesta a `lib/...`.
 
 Los documentos **no** van en la pantalla “Create with AI” de un proyecto Android nativo. Van en tu **carpeta del proyecto Flutter** y/o en el **chat de Gemini** (o del asistente que uses).
 
