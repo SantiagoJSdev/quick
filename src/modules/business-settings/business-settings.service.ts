@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { PatchBusinessSettingsDto } from './dto/patch-business-settings.dto';
 
 @Injectable()
 export class BusinessSettingsService {
@@ -44,6 +50,33 @@ export class BusinessSettingsService {
         functionalCurrencyId: func.id,
         defaultSaleDocCurrencyId: doc.id,
       },
+    });
+
+    return this.findByStoreId(storeId);
+  }
+
+  /**
+   * Actualización parcial (M7). Hoy: `defaultMarginPercent` (% tienda).
+   */
+  async patch(storeId: string, dto: PatchBusinessSettingsDto) {
+    await this.findByStoreId(storeId);
+
+    if (dto.defaultMarginPercent === undefined) {
+      throw new BadRequestException(
+        'Provide at least defaultMarginPercent to update',
+      );
+    }
+
+    const d = new Prisma.Decimal(dto.defaultMarginPercent);
+    if (!d.isFinite() || d.lt(0) || d.gt(999)) {
+      throw new BadRequestException(
+        'defaultMarginPercent must be a decimal between 0 and 999',
+      );
+    }
+
+    await this.prisma.businessSettings.update({
+      where: { storeId },
+      data: { defaultMarginPercent: d },
     });
 
     return this.findByStoreId(storeId);

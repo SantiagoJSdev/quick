@@ -24,6 +24,8 @@ export function buildProductOutboxPayload(
       description: product.description,
       image: product.image,
       type: product.type,
+      pricingMode: product.pricingMode,
+      marginPercentOverride: product.marginPercentOverride?.toString() ?? null,
       unit: product.unit,
       currency: product.currency,
       price: product.price.toString(),

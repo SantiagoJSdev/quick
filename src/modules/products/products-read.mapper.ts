@@ -8,6 +8,8 @@ export interface MongoProductReadDoc {
   description?: string | null;
   image?: string | null;
   type?: string;
+  pricingMode?: string;
+  marginPercentOverride?: string | null;
   category?: { id?: string; name?: string } | null;
   price?: string;
   cost?: string | null;
@@ -33,6 +35,8 @@ export function mongoProductReadToApiShape(
     description: doc.description ?? null,
     image: doc.image ?? null,
     type: doc.type,
+    pricingMode: doc.pricingMode ?? 'USE_STORE_DEFAULT',
+    marginPercentOverride: doc.marginPercentOverride ?? null,
     categoryId: doc.category?.id ?? null,
     price: doc.price,
     cost: doc.cost ?? null,

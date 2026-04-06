@@ -20,11 +20,12 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 - Para `GET /api/v1/stores/:storeId/business-settings`, `X-Store-Id` debe ser **igual** a `:storeId`.
 - Validacion: DTOs con `class-validator`; cuerpos JSON.
 - Productos hoy:
-  - `POST /api/v1/products` — crear (genera `OutboxEvent` `PRODUCT_CREATED`). **`sku`** opcional: si falta o va vacío, el servidor asigna **`SKU-000001`**, `SKU-000002`, … **`barcode`** opcional; vacío → `null` (único solo si informado). No mezclar barcode↔sku en el cliente salvo confirmación del usuario. Detalle: **`docs/BACKEND_PRODUCT_SKU_BARCODE.md`**.
+  - `POST /api/v1/products` — crear (genera `OutboxEvent` `PRODUCT_CREATED`). **`sku`** opcional: si falta o va vacío, el servidor asigna **`SKU-000001`**, `SKU-000002`, … **`barcode`** opcional; vacío → `null` (único solo si informado). No mezclar barcode↔sku en el cliente salvo confirmación del usuario. Detalle: **`docs/BACKEND_PRODUCT_SKU_BARCODE.md`**. Opcionales: **`pricingMode`** (`USE_STORE_DEFAULT` \| `USE_PRODUCT_OVERRIDE` \| `MANUAL_PRICE`), **`marginPercentOverride`** (string 0–999), **`supplierId`**. Respuesta (y listados) incluyen derivados de margen usando **`defaultMarginPercent`** de la tienda del header **`X-Store-Id`**: **`effectiveMarginPercent`**, **`marginComputedPercent`**, **`suggestedPrice`** (ver §13.5).
   - `GET /api/v1/products` — lista; `includeInactive=true|false`; lectura **Mongo** `products_read` por defecto con **fallback Postgres** (query `source=auto|mongo|postgres`, default `auto`). Respuesta incluye cabecera `X-Catalog-Source: mongo|postgres`.
   - `GET /api/v1/products/:id` — mismo criterio de origen; en `auto`, si no hay doc en Mongo se intenta Postgres (retraso del worker).
   - `PATCH /api/v1/products/:id` — actualiza (`PRODUCT_UPDATED`).
   - `DELETE /api/v1/products/:id` — soft delete (`PRODUCT_DEACTIVATED`).
+  - `POST /api/v1/products-with-stock` — alta **atómica**: mismo cuerpo que `POST /products` más **`initialStock`** (`quantity` obligatorio; opcional `unitCostFunctional`, `reason`, `opId` para el movimiento). **Obligatorio** header **`Idempotency-Key: <uuid>`** (generar **una vez por intento de pantalla** antes del POST). Misma clave + mismo JSON en reintentos → **200** con la **misma** respuesta **sin** crear otro producto. Misma clave + JSON distinto → **409**. Respuesta `{ product, inventory }`. TTL de registro configurable (`IDEMPOTENCY_TTL_HOURS`, default 7 días). Ver §13.6b.
 
 **Inventario por tienda (M2):**
 
@@ -53,8 +54,9 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 
 **Configuracion de tienda (moneda funcional, moneda documento por defecto):**
 
-- `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`.  
+- `GET /api/v1/stores/:storeId/business-settings` — devuelve `functionalCurrency`, `defaultSaleDocCurrency`, datos de `store`, y opcional **`defaultMarginPercent`** (string decimal, % margen por defecto de la tienda).  
   - Si no existe fila `BusinessSettings` para esa tienda: `404` (ejecutar seed, usar onboarding PUT abajo, o admin).
+- `PATCH /api/v1/stores/:storeId/business-settings` — body `{ "defaultMarginPercent": "15" }` (número en string; rango **0–999**). Misma cabecera `X-Store-Id` = `:storeId`; aplica **`StoreConfiguredGuard`** (tienda ya configurada). Respuesta **mismo shape** que el `GET`.
 
 **Onboarding desde el POS** (servidor con `STORE_ONBOARDING_ENABLED=1`; si no, **403**):
 
@@ -200,6 +202,7 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 | Tracker | `docs/IMPLEMENTATION_TRACKER.md` |
 | Productos API | `src/modules/products/` |
 | SKU vs barcode (POS) | `docs/BACKEND_PRODUCT_SKU_BARCODE.md` |
+| Inventario + proveedores + márgenes (PDFs → API) | `docs/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` + `IMPLEMENTATION_TRACKER.md` §5.1 (M7) |
 | Inventario API | `src/modules/inventory/` |
 | Ventas API | `src/modules/sales/` |
 | Historial ventas (listado) | `docs/BACKEND_SALES_HISTORY_API.md`, `GET /api/v1/sales` |
@@ -267,6 +270,7 @@ Respuesta **200** (objeto Prisma serializado; `Decimal` suele ir como string en 
   "storeId": "550e8400-e29b-41d4-a716-446655440001",
   "functionalCurrencyId": "curr-usd-uuid",
   "defaultSaleDocCurrencyId": "curr-ves-uuid",
+  "defaultMarginPercent": "15",
   "createdAt": "2026-04-01T12:00:00.000Z",
   "updatedAt": "2026-04-01T12:00:00.000Z",
   "functionalCurrency": {
@@ -355,13 +359,22 @@ El controlador devuelve el array de productos (forma según `products.service`);
   "name": "Arroz 1kg",
   "description": null,
   "type": "GOODS",
+  "pricingMode": "USE_STORE_DEFAULT",
+  "marginPercentOverride": null,
   "price": "2.50",
   "cost": "1.80",
   "currency": "USD",
   "active": true,
-  "unit": "unidad"
+  "unit": "unidad",
+  "effectiveMarginPercent": "15",
+  "marginComputedPercent": "38.88888888888888888888888888889",
+  "suggestedPrice": "2.07"
 }
 ```
+
+- **`effectiveMarginPercent`**: margen % que aplica la regla (`USE_STORE_DEFAULT` → margen tienda; `USE_PRODUCT_OVERRIDE` → override; `MANUAL_PRICE` → `null`).
+- **`marginComputedPercent`**: `(price - cost) / cost × 100` si `cost` &gt; 0 (indicativo si moneda de lista ≠ funcional).
+- **`suggestedPrice`**: `cost × (1 + margenEfectivo/100)` si hay margen efectivo y `cost` &gt; 0; `null` en `MANUAL_PRICE`.
 
 Cabecera respuesta: `X-Catalog-Source: mongo` o `postgres`.
 
@@ -379,7 +392,48 @@ Cabecera respuesta: `X-Catalog-Source: mongo` o `postgres`.
 }
 ```
 
+Opcionales: `"pricingMode": "USE_PRODUCT_OVERRIDE"`, `"marginPercentOverride": "25"` (margen % sobre costo, rango 0–999). En **`PATCH /products/:id`**, enviar **`marginPercentOverride": null`** borra el override.
+
 **Response:** producto creado (incl. `id`, timestamps). Errores comunes: `sku` duplicado → 409/400 según implementación.
+
+### 13.6b Alta producto + stock inicial → `POST /products-with-stock`
+
+**Cabeceras obligatorias**
+
+| Header | Uso |
+|--------|-----|
+| `X-Store-Id` | Igual que el resto del POS. |
+| `Idempotency-Key` | UUID generado en el **cliente** al **iniciar** el flujo (no por cada retry aleatorio). Mismo valor en todos los reintentos del **mismo** alta. **Nuevo** producto en otra pantalla → **nuevo** UUID. |
+
+**Contrato anti-duplicados (Flutter / POS)**
+
+1. Al abrir el asistente “producto + stock inicial”, generar `idempotencyKey = Uuid().v4()` (o equivalente) y guardarlo en estado del formulario hasta que el POST termine en **200** o el usuario cancele.
+2. Si hay timeout o error de red, **reintentar** con el **mismo** `Idempotency-Key` y el **mismo** cuerpo JSON (bit a bit lógico: mismos campos/valores). El servidor devuelve la respuesta guardada y **no** crea un segundo `Product`.
+3. Si el usuario **cambia** el formulario y reutiliza por error la misma clave → **409** `Conflict` (mensaje: clave ya usada con otro cuerpo).
+4. `initialStock.opId` sigue siendo opcional y solo idempotencia del **movimiento** en inventario (distinto del `Idempotency-Key` de la petición HTTP).
+
+Cuerpo = campos de **`POST /products`** + **`initialStock`**:
+
+```json
+{
+  "name": "Refresco 2L",
+  "price": "2.00",
+  "cost": "1.20",
+  "currency": "USD",
+  "initialStock": {
+    "quantity": "48",
+    "unitCostFunctional": "1.20",
+    "reason": "Inventario inicial",
+    "opId": "00000000-0000-4000-8000-000000000099"
+  }
+}
+```
+
+`unitCostFunctional` es opcional (misma regla que `IN_ADJUST`: si falta, entra el `cost` del producto).
+
+**Response 200:** `{ "product": { ... }, "inventory": { ... } }` — `inventory` es la fila `InventoryItem` de esa tienda con `product` anidado resumido (como en `GET /inventory`).
+
+**Errores:** sin `Idempotency-Key` o UUID inválido → **400**. Clave repetida con JSON distinto → **409**.
 
 ### 13.7 Ajuste inventario → `POST /inventory/adjustments`
 

@@ -1,11 +1,18 @@
 import { randomUUID } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
+import type { BusinessSettings } from '@prisma/client';
+import { InventoryModule } from '../inventory/inventory.module';
 import { MongoModule } from '../../mongo/mongo.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductsService } from './products.service';
 
 const run = process.env.RUN_INTEGRATION === '1';
+
+const integrationCtx = {
+  storeId: '00000000-0000-4000-8000-000000000001',
+  settings: { defaultMarginPercent: null } as BusinessSettings,
+};
 
 (run ? describe : describe.skip)(
   'ProductsService outbox (integration, RUN_INTEGRATION=1)',
@@ -17,7 +24,7 @@ const run = process.env.RUN_INTEGRATION === '1';
 
     beforeAll(async () => {
       moduleRef = await Test.createTestingModule({
-        imports: [PrismaModule, MongoModule],
+        imports: [PrismaModule, MongoModule, InventoryModule],
         providers: [ProductsService],
       }).compile();
 
@@ -45,12 +52,15 @@ const run = process.env.RUN_INTEGRATION === '1';
       if (!products || !prisma) {
         throw new Error('Test module not initialized');
       }
-      const product = await products.create({
-        sku,
-        name: 'Integration test product',
-        price: '1.00',
-        cost: '0.50',
-      });
+      const product = await products.create(
+        {
+          sku,
+          name: 'Integration test product',
+          price: '1.00',
+          cost: '0.50',
+        },
+        integrationCtx,
+      );
 
       const ev = await prisma.outboxEvent.findFirst({
         where: {

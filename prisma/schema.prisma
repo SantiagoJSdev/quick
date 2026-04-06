@@ -12,6 +12,13 @@ enum ProductType {
   CONSUMABLE
 }
 
+/// Cómo se determina el precio de lista respecto al costo y al margen de tienda.
+enum ProductPricingMode {
+  USE_STORE_DEFAULT
+  USE_PRODUCT_OVERRIDE
+  MANUAL_PRICE
+}
+
 enum StockMovementType {
   IN_PURCHASE
   IN_RETURN
@@ -77,6 +84,9 @@ model BusinessSettings {
   functionalCurrency       Currency  @relation("SettingsFunctionalCurrency", fields: [functionalCurrencyId], references: [id])
   defaultSaleDocCurrencyId String?
   defaultSaleDocCurrency   Currency? @relation("SettingsDefaultSaleDocCurrency", fields: [defaultSaleDocCurrencyId], references: [id])
+  /// Margen comercial por defecto de la tienda (%), ej. 15.00 = 15%. Null = no configurado (UI puede usar lógica local hasta M7 completo).
+  defaultMarginPercent     Decimal?  @db.Decimal(10, 4)
+
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 }
@@ -120,6 +130,10 @@ model Product {
   unit           String     @default("unidad")
   supplierId     String?
   supplier       Supplier?  @relation(fields: [supplierId], references: [id])
+
+  pricingMode            ProductPricingMode @default(USE_STORE_DEFAULT)
+  /// % de margen sobre costo cuando `pricingMode` = USE_PRODUCT_OVERRIDE; ignorado en otros modos salvo futuras reglas de sugerencia.
+  marginPercentOverride  Decimal?           @db.Decimal(10, 4)
 
   inventoryItems InventoryItem[]
   movements      StockMovement[]
@@ -291,9 +305,26 @@ model Store {
   storeSyncState   StoreSyncState?
   syncOperations   SyncOperation[]
   suppliers        Supplier[]
+  idempotencyRecords IdempotencyRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Respuestas cacheadas para cabecera `Idempotency-Key` (p. ej. `POST /products-with-stock`).
+model IdempotencyRecord {
+  id           String   @id @default(uuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  scope        String
+  key          String
+  requestHash  String   @db.VarChar(64)
+  responseJson Json
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@unique([storeId, scope, key])
+  @@index([expiresAt])
 }
 
 /// Monotonic `serverVersion` per store for `POST /sync/push` acks (`acked[].serverVersion`).

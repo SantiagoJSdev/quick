@@ -10,6 +10,7 @@ Copia estos archivos **desde el repo del backend** al **repo de tu app Flutter**
 | `docs/api/SYNC_CONTRACTS.md` | `docs/backend/SYNC_CONTRACTS.md` |
 | `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md` | `docs/backend/MULTI_CURRENCY_ARCHITECTURE.md` |
 | `docs/api/RETURNS_POLICY.md` | `docs/backend/RETURNS_POLICY.md` (devoluciones, sprint posterior) |
+| `docs/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` | `docs/backend/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` (inventario UX + márgenes + proveedores; plan M7) |
 | `docs/api/MONGO_PRODUCTS_READ.md` | `docs/backend/MONGO_PRODUCTS_READ.md` (opcional) |
 | `docs/api/PRODUCT_SOFT_DELETE_POLICY.md` | `docs/backend/PRODUCT_SOFT_DELETE_POLICY.md` (opcional) |
 | `postman/QuickMarket_API.postman_collection.json` | `assets/postman/QuickMarket_API.postman_collection.json` (opcional; importar también en Postman) |
@@ -20,3 +21,5 @@ Copia estos archivos **desde el repo del backend** al **repo de tu app Flutter**
 
 - `API_BASE_URL` — ej. `https://tu-servidor.com/api/v1` (sin barra final duplicada en paths).
 - `STORE_ID` — UUID de tienda (solo desarrollo; en producción flujo de “elegir tienda” o login futuro).
+
+**Alta producto + stock (`POST …/products-with-stock`):** enviar cabecera **`Idempotency-Key`** (UUID fijo por intento de formulario; reintentos mismos header + mismo body). Detalle en `FRONTEND_INTEGRATION_CONTEXT.md` §13.6b.

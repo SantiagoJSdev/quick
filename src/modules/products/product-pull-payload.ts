@@ -8,6 +8,9 @@ export function productToSyncPullFields(product: {
   description: string | null;
   image: string | null;
   type: string;
+  /** Optional for older generated Prisma clients; defaults applied below. */
+  pricingMode?: string;
+  marginPercentOverride?: Prisma.Decimal | null;
   categoryId: string | null;
   price: Prisma.Decimal;
   cost: Prisma.Decimal;
@@ -24,6 +27,8 @@ export function productToSyncPullFields(product: {
     description: product.description,
     image: product.image,
     type: product.type,
+    pricingMode: product.pricingMode ?? 'USE_STORE_DEFAULT',
+    marginPercentOverride: product.marginPercentOverride?.toString() ?? null,
     categoryId: product.categoryId,
     price: product.price.toString(),
     cost: product.cost.toString(),
@@ -43,6 +48,9 @@ export function productSyncPullPayload(product: {
   description: string | null;
   image: string | null;
   type: string;
+  /** Optional for older generated Prisma clients; defaults applied below. */
+  pricingMode?: string;
+  marginPercentOverride?: Prisma.Decimal | null;
   categoryId: string | null;
   price: Prisma.Decimal;
   cost: Prisma.Decimal;

@@ -250,6 +250,8 @@ export class OutboxMongoWorker implements OnModuleInit, OnModuleDestroy {
       description: p.description ?? null,
       image: p.image ?? null,
       type: p.type,
+      pricingMode: p.pricingMode ?? 'USE_STORE_DEFAULT',
+      marginPercentOverride: p.marginPercentOverride ?? null,
       category: p.category ?? null,
       unit: p.unit,
       currency: p.currency,

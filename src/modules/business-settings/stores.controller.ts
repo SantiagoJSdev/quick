@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Put,
   Req,
   UseGuards,
@@ -14,6 +15,7 @@ import { Request } from 'express';
 import { StoreOnboardingEnabledGuard } from '../../common/guards/store-onboarding-enabled.guard';
 import { SkipStoreConfigured } from '../../common/metadata';
 import { BusinessSettingsService } from './business-settings.service';
+import { PatchBusinessSettingsDto } from './dto/patch-business-settings.dto';
 import { UpsertBusinessSettingsOnboardingDto } from './dto/upsert-business-settings-onboarding.dto';
 import { UpsertStoreDto } from './dto/upsert-store.dto';
 import { StoresService } from './stores.service';
@@ -87,5 +89,18 @@ export class StoresController {
   @Get(':storeId/business-settings')
   getBusinessSettings(@Param('storeId', ParseUUIDPipe) storeId: string) {
     return this.businessSettings.findByStoreId(storeId);
+  }
+
+  @Patch(':storeId/business-settings')
+  @ApiOperation({
+    summary: 'Actualizar ajustes comerciales parciales (margen tienda)',
+    description:
+      'Requiere tienda configurada (`X-Store-Id` + `BusinessSettings`). Hoy solo `defaultMarginPercent` (%).',
+  })
+  patchBusinessSettings(
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() dto: PatchBusinessSettingsDto,
+  ) {
+    return this.businessSettings.patch(storeId, dto);
   }
 }

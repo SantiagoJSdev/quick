@@ -9,7 +9,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { ProductType } from '@prisma/client';
+import { ProductPricingMode, ProductType } from '@prisma/client';
 
 export class UpdateProductDto {
   @IsOptional()
@@ -70,6 +70,14 @@ export class UpdateProductDto {
   @IsOptional()
   @IsUUID()
   supplierId?: string;
+
+  @IsOptional()
+  @IsEnum(ProductPricingMode)
+  pricingMode?: ProductPricingMode;
+
+  @IsOptional()
+  @IsNumberString()
+  marginPercentOverride?: string | null;
 
   @IsOptional()
   @IsBoolean()

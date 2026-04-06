@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -66,6 +66,7 @@ async function main() {
         storeId: store.id,
         functionalCurrencyId: usd.id,
         defaultSaleDocCurrencyId: ves.id,
+        defaultMarginPercent: new Prisma.Decimal('15'),
       },
       update: {},
     });

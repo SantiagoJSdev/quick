@@ -1,4 +1,4 @@
-import { ProductType } from '@prisma/client';
+import { ProductPricingMode, ProductType } from '@prisma/client';
 import { buildProductOutboxPayload } from './product-outbox.payload';
 import type { ProductForOutbox } from './product-outbox.payload';
 
@@ -12,6 +12,8 @@ describe('buildProductOutboxPayload', () => {
       description: null,
       image: null,
       type: ProductType.GOODS,
+      pricingMode: ProductPricingMode.USE_STORE_DEFAULT,
+      marginPercentOverride: null,
       unit: 'unidad',
       currency: 'VES',
       price: { toString: () => '10.00' },

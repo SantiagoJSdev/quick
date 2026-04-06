@@ -84,7 +84,7 @@ Resultado: sincronizacion robusta sin inconsistencias por fallos intermedios.
 
 - Estado de fase: `Sprint 1` + `M0 parcial (requestId + errores JSON); M3 sync DONE; M2–M5 + devoluciones venta operativas`
 - Avance global estimado Fase 1: `~92%` (pendiente: auth `/ops`, tests integración FX pesados, login, transferencias, dashboards)
-- Ultima actualizacion: `2026-04-03`
+- Ultima actualizacion: `2026-04-06`
 
 ### Implementado vs. pasos a futuro (deuda conocida)
 
@@ -221,6 +221,7 @@ Checklist vivo; marcar al cerrar cada ítem.
 - [ ] **7. Sync / producto** — Unificar o aclarar dos `serverVersion` (pull vs push); backfill `ServerChangeLog`; opcional inventario en pull.
 - [ ] **8. Fuera Fase 1** — Devolución compra a proveedor, auth usuarios/login POS, reportería, contabilidad, WebSockets.
 - [x] **9. Documentación front** — `FRONTEND_INTEGRATION_CONTEXT`: §13 ejemplos JSON por pantalla/flujo; §14 FX (pares, snapshots, límites).
+- [ ] **10. M7 — Inventario UX + márgenes + alta rápida** — Plan por pasos en §5.1; contrato front: `docs/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` (PDFs proveedores/márgenes + UX inventario).
 
 ### Sprint 0 (cerrado)
 
@@ -260,8 +261,27 @@ Checklist vivo; marcar al cerrar cada ítem.
 
 - [x] DONE (base) - `docs/FRONTEND_INTEGRATION_CONTEXT.md` creado con API actual, offline, Mongo, **multi-moneda** y enlaces a dominio. **Ampliar** al implementar cada nuevo endpoint (login, ventas, tasas, inventario).
 - [x] DONE - Contexto Front: §13–§14 en `FRONTEND_INTEGRATION_CONTEXT.md` (JSON por pantalla + tabla FX).
-- [x] DONE (base) - Guía Flutter/Android + Gemini: `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`; índice de copia `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`; `FRONTEND_INTEGRATION_CONTEXT.md` ampliado (multi-dispositivo, seguridad, roadmap sprint, proveedores sin API).
+- [x] DONE (base) - Guía Flutter/Android + Gemini: `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`; índice de copia `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`; `FRONTEND_INTEGRATION_CONTEXT.md` ampliado (multi-dispositivo, seguridad, roadmap sprint). Proveedores: API `GET/POST/PATCH/DELETE /suppliers`; inventario/márgenes: `FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` + M7.
 - [x] DONE - **Auth `/ops/*`**: `OpsAuthGuard`, `OPS_API_KEY`, `OPS_IP_ALLOWLIST`, `TRUST_PROXY`; Swagger + README.
+
+### 5.1) Plan M7 — Proveedores (PDF) + márgenes + alta rápida (inventario UX)
+
+**Objetivo:** cumplir `quickmarket_backend_proveedores_inventario_margenes.pdf` y alinear `quickmarket_front_ux_proveedores_inventario.pdf` **sin** fusionar Product/Inventory/Movement en un solo modelo; sí añadir **configuración de margen**, **modo de precio** y **endpoint compuesto** opcional.
+
+**Ya hecho antes de M7:** API proveedores por tienda; `Product.supplierId`; SKU autogenerado + barcode; inventario y movimientos; compras con `supplierId` acotado a tienda y activo. Ver `docs/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md`.
+
+| Paso | Descripción | Estado |
+|------|-------------|--------|
+| **M7-P1** | Schema: `BusinessSettings.defaultMarginPercent` (`Decimal?`, % tienda). Migración + seed opcional. | `DONE` |
+| **M7-P2** | Schema: `Product.pricingMode` (`ProductPricingMode`, default `USE_STORE_DEFAULT`), `Product.marginPercentOverride` (`Decimal?`). Migración; DTOs create/update; validación margen 0–999; outbox + `products_read` + sync pull. | `DONE` |
+| **M7-P3** | Respuestas producto (`GET/PATCH/DELETE/POST` catálogo) con `effectiveMarginPercent`, `marginComputedPercent`, `suggestedPrice` según `pricingMode` y `BusinessSettings.defaultMarginPercent` (cabecera `X-Store-Id`). | `DONE` |
+| **M7-P4** | `PATCH /api/v1/stores/:storeId/business-settings` con body `{ defaultMarginPercent }` (margen tienda), **con** `StoreConfiguredGuard`. Monedas siguen en `PUT` onboarding. | `DONE` |
+| **M7-P5** | `POST /api/v1/products-with-stock`: transacción — create producto (outbox `PRODUCT_CREATED`) + `IN_ADJUST` stock inicial; rollback si falla; respuesta `{ product, inventory }`. | `DONE` |
+| **M7-P6** | Post-compra: política de **sugerencia** de precio si cambia costo (`MANUAL_PRICE` = no mutar `price` en silencio; documentar MVP). | `TODO` |
+| **M7-P7** | Mongo `products_read` + mapper + payload `PRODUCT_*` con `pricingMode` y `marginPercentOverride`. | `DONE` |
+| **M7-P8** | Tests margen + compuesto; `FRONTEND_INTEGRATION_CONTEXT.md` + Postman. | `TODO` |
+
+**Nota MVP:** recálculo tras compra = exponer **sugerencia** y que el front o un endpoint explícito aplique el nuevo `price` (evitar cambios silenciosos).
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -295,3 +315,8 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-04: **Checklist 1–2**: `OpsAuthGuard` en `/ops/*`; integración M6 — venta conserva FX tras nueva `ExchangeRate`; sync `SALE` idempotente por `opId`.
 - 2026-04-04: **Multi-moneda (checklist 6)**: `ExchangeRatesService.findLatestForDocumentFunctionalPair`; `StoreFxSnapshotService` sin límite USD/VES; devoluciones `SPOT_ON_RETURN`; documentación redondeo; seed `EUR` + par EUR/USD.
 - 2026-04-04: **Documentación front (checklist 9)**: `FRONTEND_INTEGRATION_CONTEXT.md` §13 (JSON por pantalla: errores, settings, FX, productos, inventario, ventas, compras, devoluciones, sync); §14 (escenarios FX y límites).
+- 2026-04-06: **Plan M7** (PDFs backend/front inventario-proveedores-márgenes): tracker §5.1 con pasos P1–P8; documento sincronización Flutter `docs/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` (qué ya existe vs pendiente; `taxId`; stock inicial en 2 llamadas hasta `products-with-stock`).
+- 2026-04-06: **M7 P1–P2–P4–P7 (margen/precio)**: `defaultMarginPercent` en settings + `PATCH` tienda; `Product.pricingMode` (`USE_STORE_DEFAULT` \| `USE_PRODUCT_OVERRIDE` \| `MANUAL_PRICE`) y `marginPercentOverride`; validación margen 0–999 en producto; outbox, proyección Mongo `products_read` y payload `sync/pull` con esos campos.
+- 2026-04-06: **M7-P3**: respuestas API de producto enriquecidas con `effectiveMarginPercent`, `marginComputedPercent` (sobre `price`/`cost` almacenados), `suggestedPrice` = costo × (1 + margen efectivo/100) salvo `MANUAL_PRICE`; requiere contexto de tienda (`StoreConfiguredGuard`).
+- 2026-04-06: **M7-P5**: `POST /api/v1/products-with-stock` — mismo body que alta de producto + objeto `initialStock` (`quantity`, opcional `unitCostFunctional`, `reason`, `opId`); una transacción Postgres: `persistProductCreatedTx` + `InventoryService.applyAdjustTx` (`IN_ADJUST`, tienda del header).
+- 2026-04-06: **Idempotencia `POST /products-with-stock`**: cabecera obligatoria `Idempotency-Key` (UUID); modelo `IdempotencyRecord` (único por `storeId` + scope + key), hash SHA-256 del cuerpo canónico, respuesta en JSON con TTL `IDEMPOTENCY_TTL_HOURS` (default 168 h); transacción `Serializable` + reintentos en `P2034`.

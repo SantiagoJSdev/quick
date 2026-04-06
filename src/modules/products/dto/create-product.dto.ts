@@ -10,7 +10,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { ProductType } from '@prisma/client';
+import { ProductPricingMode, ProductType } from '@prisma/client';
 
 export class CreateProductDto {
   @ApiPropertyOptional({
@@ -78,6 +78,23 @@ export class CreateProductDto {
   @IsOptional()
   @IsUUID()
   supplierId?: string;
+
+  @ApiPropertyOptional({
+    enum: ProductPricingMode,
+    default: ProductPricingMode.USE_STORE_DEFAULT,
+  })
+  @IsOptional()
+  @IsEnum(ProductPricingMode)
+  pricingMode?: ProductPricingMode;
+
+  @ApiPropertyOptional({
+    description:
+      'Porcentaje de margen sobre costo (0–999). Tiene efecto principalmente con `USE_PRODUCT_OVERRIDE`.',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
+  @IsNumberString()
+  marginPercentOverride?: string;
 
   @IsOptional()
   @IsBoolean()
