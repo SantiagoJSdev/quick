@@ -2,6 +2,8 @@
 
 Documento alineado con el análisis *pos_tickets_en_espera_frontend_backend* y con el API real de Quick Market. **Copiar al repo Flutter** (ver `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`).
 
+> **Sincronización:** la copia en el repo Flutter `quick_pos/docs/POS_TICKETS_EN_ESPERA_FRONT_BACKEND.md` incluye la **§13 Implementación** actualizada con el estado del código Flutter.
+
 ---
 
 ## 1. Objetivo
@@ -57,8 +59,8 @@ La clave: **ON_HOLD** no es `Sale`, no es `SyncOperation`, no genera `StockMovem
 
 ### Frontend (Flutter)
 
-1. Entidad local **`HeldTicket`** persistida en **SQLite** (no solo en memoria).
-2. Tablas sugeridas: **`held_tickets`**, **`held_ticket_lines`**.
+1. Entidad local **`HeldTicket`** persistida en el dispositivo (recomendado **SQLite**; en **quick_pos** fase 1: JSON en **SharedPreferences** `held_tickets_v1`, ver §13).
+2. Tablas sugeridas: **`held_tickets`**, **`held_ticket_lines`** (o un único JSON por lista de tickets).
 3. Separación estricta:
    - **`localops`** = cola de sync para ops **definitivas** (venta cobrada offline, ajustes, etc.).
    - **`held_tickets`** = borradores recuperables; **no** duplicar como fila en `localops` hasta el cobro.
@@ -229,13 +231,28 @@ Hasta entonces, la fase 1 **no requiere** estos endpoints.
 
 ## 11. Checklist Flutter (fase 1)
 
-- [ ] Modelo `HeldTicket` + repositorio SQLite (`held_tickets` / `held_ticket_lines`).  
-- [ ] Botón **En espera** + modal alias + persistencia + limpiar carrito.  
-- [ ] Pantalla / bottom sheet **Tickets en espera** + badge con contador.  
-- [ ] **Recuperar** con regla de carrito ocupado.  
-- [ ] **Cobrar** → `POST /sales` (online) o encolar `SALE` (offline) según conectividad.  
-- [ ] Tras 200 / ack: borrar ticket local.  
-- [ ] Documentar en README Flutter que **held ≠ Sale ≠ sync op**.
+- [x] Modelo `HeldTicket` / `HeldTicketLine` + persistencia local (**SharedPreferences** JSON clave `held_tickets_v1`; esquema lógico alineado al §5–6; SQLite opcional más adelante).  
+- [x] Botón **En espera** (ícono pausa) + bottom sheet alias/nota + persistencia + limpiar carrito.  
+- [x] Bottom sheet **Tickets en espera** + enlace **Guardados (N)** con contador.  
+- [x] **Recuperar** con diálogo si el carrito actual tiene ítems: *Reemplazar* / *Guardar actual y abrir este* / *Cancelar*.  
+- [x] **Cobrar** sin cambios de contrato: `POST /sales` (online) o cola `SALE` (offline) como ya hace el POS.  
+- [x] Tras cobro exitoso (REST o encolado offline): borrar ticket en espera si el carrito provenía de uno recuperado (`_activeHeldTicketId`).  
+- [x] Vaciar ticket manualmente anula el vínculo con el ticket en espera activo (no borra el guardado en lista hasta que el usuario elimine).  
+- [ ] Documentar en README raíz que **held ≠ Sale ≠ sync op** (opcional; este doc + código sirven de referencia).
+
+---
+
+## 13. Implementación en **quick_pos** (Flutter)
+
+| Área | Detalle |
+|------|---------|
+| Modelo | `lib/core/models/held_ticket.dart` — `HeldTicket`, `HeldTicketLine`, JSON, `fromPosCart` con `fxSnapshot` tipo `POS_PREVIEW`. |
+| Persistencia | `lib/core/storage/local_prefs.dart` — `held_tickets_v1`, `listHeldTicketsForStoreAndDevice`, `upsertHeldTicket`, `deleteHeldTicket`, `updateHeldTicketAlias`. Filtrado por `storeId` + `deviceId`. |
+| UI POS | `lib/features/sale/pos_held_tickets_ui.dart` — guardar en espera, lista, conflicto al recuperar, renombrar. |
+| Panel cobro | `lib/features/sale/pos_sale_widgets.dart` — `PosSaleCheckoutPanel`: **Guardados (N)**, botón **Poner ticket en espera** (pausa). |
+| Lógica | `lib/features/sale/pos_sale_screen.dart` — contador, recuperación sin recalcular precios documento (`rebuildDocumentLinePrices: false`), eliminación del held tras venta, poner en espera borra el held previo si el carrito era una recuperación. |
+
+**No** se encolan operaciones `SALE` ni se llama al API al guardar en espera: solo al **Cobrar**.
 
 ---
 
