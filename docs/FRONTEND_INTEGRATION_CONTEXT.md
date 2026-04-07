@@ -36,13 +36,14 @@ Actualizado con **multi-moneda (Venezuela)** y el stack actual (Postgres, outbox
 
 **Ventas (M4):**
 
+- **Tickets en espera (held / parked):** no son ventas hasta cobrar; fase 1 en Flutter = SQLite local, sin API dedicada. Al cobrar usar `POST /sales` o sync `SALE`. Especificación: **`docs/POS_TICKETS_EN_ESPERA_FRONT_BACKEND.md`**.
 - `GET /api/v1/sales` — historial de la tienda (cabecera `X-Store-Id`). Query opcional: `dateFrom`, `dateTo` (`YYYY-MM-DD` en **zona `Store.timezone`**, o UTC si la tienda no tiene timezone), `deviceId`, `limit` (default 50, max 200), `cursor` (siguiente página; opaco), `format`=`object`|`array`. Por defecto respuesta **`{ items, nextCursor, meta }`** con `meta.timezone`, fechas efectivas y texto de interpretación; con `format=array` solo el array (sin paginar por cursor). Máximo **31 días** calendario inclusive entre from/to (o defaults documentados). Orden: más reciente primero. Detalle líneas: `GET /sales/:id`. Contrato detallado: **`docs/BACKEND_SALES_HISTORY_API.md`**.
 - `POST /api/v1/sales` — confirma venta: `lines[]` (`productId`, `quantity`, `price` string, opcional `discount`), opcional `id` (UUID cliente; si ya existe venta con ese id en la tienda, respuesta idempotente sin duplicar stock), `documentCurrencyCode`, `userId`, `deviceId`, opcional `appVersion`, `fxSnapshot` (`baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate` `YYYY-MM-DD`, opcional `fxSource` e.g. `POS_OFFLINE`). Si envías **`deviceId`**, el servidor **crea o actualiza** el registro `POSDevice` de esa tienda (`lastSeen`, `appVersion` si viene) y **enlaza la venta**; si ese `deviceId` ya está en **otra** tienda → **409 Conflict**. Sin `deviceId`, la venta se guarda igual pero sin terminal en cabecera. Descuenta stock (`OUT_SALE`) y guarda importes documento + funcional en cabecera y líneas.
 - `GET /api/v1/sales/:id` — detalle con líneas (misma tienda que `X-Store-Id`).
 
 **Compras / recepción (M5/M6 complemento):**
 
-- `POST /api/v1/purchases` — recepción de mercancía: `supplierId` (UUID), `lines[]` (`productId`, `quantity`, `unitCost` en moneda documento), opcional `id` (idempotencia), `documentCurrencyCode`, `fxSnapshot` (misma forma que ventas). Crea `Purchase` estado `RECEIVED`, `dateReceived` = ahora, movimientos `IN_PURCHASE` y actualiza costo medio funcional del inventario.
+- `POST /api/v1/purchases` — recepción de mercancía: `supplierId` (UUID), `lines[]` (`productId`, `quantity`, `unitCost` en moneda documento), opcional `id` (idempotencia), `documentCurrencyCode`, `fxSnapshot` (misma forma que ventas). Crea `Purchase` estado `RECEIVED`, `dateReceived` = ahora, movimientos `IN_PURCHASE` y actualiza **costo medio funcional del inventario** (`InventoryItem`). **No** cambia solo `Product.price` ni `Product.cost` del catálogo. Tras compra, sugerencia de nuevo precio de lista: ver **`docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md`** y §13.10.
 - `GET /api/v1/purchases/:id` — detalle con líneas y proveedor.
 - Proveedores (por tienda, `X-Store-Id`): **`GET /api/v1/suppliers`** (lista paginada, `q`, `active`, `cursor`), **`POST /api/v1/suppliers`** (alta; el servidor devuelve `id`), **`GET/PATCH/DELETE`** `/suppliers/:id` (`DELETE` = soft `active=false`). Contrato: **`docs/BACKEND_SUPPLIERS_API_PROPOSAL.md`**. El seed crea un proveedor “general” **por tienda** si no hay ninguno. `POST /purchases` exige `supplierId` de **esa tienda** y proveedor **activo**.
 
@@ -209,6 +210,7 @@ Qué documentos del backend copiar al repo Flutter y dónde pegarlos:
 | Proveedores (CRUD / lista) | `docs/BACKEND_SUPPLIERS_API_PROPOSAL.md`, `src/modules/suppliers/` |
 | Registro POS (`POSDevice`) | `src/modules/pos-device/pos-device.service.ts` (ventas + sync) |
 | Compras API | `src/modules/purchases/` |
+| Política precio tras compra (M7-P6) | `docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md` |
 | Devoluciones venta | `src/modules/sale-returns/` + `docs/api/RETURNS_POLICY.md` |
 | FX snapshot tienda | `src/modules/exchange-rates/store-fx-snapshot.service.ts` |
 | Observabilidad M5 | `src/modules/ops/` (`GET /ops/metrics`, `OpsAuthGuard`, scheduler) |
@@ -581,6 +583,8 @@ Online sin offline: omitir `fxSource` o no usar `POS_OFFLINE`; el servidor contr
   }
 }
 ```
+
+**Después de una compra (precio de venta):** el backend **no** actualiza el **`price`** del producto. El costo valorizado de la tienda queda en **`GET /inventory/:productId`** (`averageUnitCostFunctional`). Los campos derivados del catálogo (`suggestedPrice` en `GET /products`) usan **`Product.cost`** hasta que alguien haga **`PATCH /products/:id`**. Detalle y tabla por `pricingMode`: **`docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md`**.
 
 ### 13.11 Devolución → `POST /sale-returns`
 

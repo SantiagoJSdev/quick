@@ -76,6 +76,19 @@ PostgreSQL usa **tablas** (no “colecciones”; eso es Mongo).
 2. **pgAdmin** o **DBeaver**: conecta con los mismos datos que `DATABASE_URL` (host, puerto, usuario, contraseña, base `gemini`).
 3. **Docker**: si Postgres corre en contenedor, puedes usar `docker exec -it gemini-postgres psql -U postgres -d gemini` y luego `\dt` para listar tablas.
 
+## Nombres de base: PostgreSQL vs Mongo
+
+| Motor | Dónde se configura el nombre | Notas |
+|-------|------------------------------|--------|
+| **PostgreSQL** | En **`DATABASE_URL`**: el segmento tras el puerto `5432/` y antes de `?` es el nombre de la base (ej. `.../gemini?schema=public` → base `gemini`). El **`schema`** (p. ej. `public`) es el esquema dentro de esa base. | Si cambias el nombre, crea antes la base en el servidor (`CREATE DATABASE ...`) y ejecuta `npx prisma migrate dev` (o `deploy`). |
+| **MongoDB** | Variable **`MONGODB_DATABASE_NAME`** (opcional; por defecto en código **`quickmarket`**). La URI **`MONGODB_URI`** apunta al servidor; el nombre de la base lo elige la app al hacer `client.db(MONGODB_DATABASE_NAME)`. | Puedes usar `MONGODB_DATABASE_NAME=quickmarket` u otro nombre sin cambiar el host de la URI. |
+
+## Reset completo en desarrollo
+
+- **`npm run db:reset:dev`**: PostgreSQL → `prisma migrate reset --force` (todas las tablas del schema, migraciones + seed). Si **`MONGODB_URI`** está definido, vacía las colecciones **`products_read`** y **`fx_rates_read`** en la base `MONGODB_DATABASE_NAME`.
+- Para **eliminar toda la base Mongo** con ese nombre (dev): **`npm run db:reset:dev:mongo-drop`** (equivale a `MONGODB_DROP_DATABASE=1` + mismo script). En PowerShell también puedes: `$env:MONGODB_DROP_DATABASE='1'; npm run db:reset:dev`.
+- Solo Postgres, sin tocar Mongo: **`npm run db:reset`**.
+
 ## Mongo: `products_read` y `fx_rates_read`
 
 - **`products_read`**: proyeccion del catalogo (eventos de producto en outbox).

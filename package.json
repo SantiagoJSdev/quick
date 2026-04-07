@@ -21,7 +21,8 @@
     "test:integration": "cross-env RUN_INTEGRATION=1 jest",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
-    "db:reset:dev": "cross-env ALLOW_DEV_DB_RESET=1 ts-node --transpile-only scripts/dev-reset-databases.ts"
+    "db:reset:dev": "cross-env ALLOW_DEV_DB_RESET=1 ts-node --transpile-only scripts/dev-reset-databases.ts",
+    "db:reset:dev:mongo-drop": "cross-env ALLOW_DEV_DB_RESET=1 MONGODB_DROP_DATABASE=1 ts-node --transpile-only scripts/dev-reset-databases.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

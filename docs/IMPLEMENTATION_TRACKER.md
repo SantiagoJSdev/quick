@@ -277,11 +277,13 @@ Checklist vivo; marcar al cerrar cada ítem.
 | **M7-P3** | Respuestas producto (`GET/PATCH/DELETE/POST` catálogo) con `effectiveMarginPercent`, `marginComputedPercent`, `suggestedPrice` según `pricingMode` y `BusinessSettings.defaultMarginPercent` (cabecera `X-Store-Id`). | `DONE` |
 | **M7-P4** | `PATCH /api/v1/stores/:storeId/business-settings` con body `{ defaultMarginPercent }` (margen tienda), **con** `StoreConfiguredGuard`. Monedas siguen en `PUT` onboarding. | `DONE` |
 | **M7-P5** | `POST /api/v1/products-with-stock`: transacción — create producto (outbox `PRODUCT_CREATED`) + `IN_ADJUST` stock inicial; rollback si falla; respuesta `{ product, inventory }`. | `DONE` |
-| **M7-P6** | Post-compra: política de **sugerencia** de precio si cambia costo (`MANUAL_PRICE` = no mutar `price` en silencio; documentar MVP). | `TODO` |
+| **M7-P6** | Post-compra: política de sugerencia de precio (sin mutar `Product.price` al recibir compra; `MANUAL_PRICE` y resto igual). Documentado: **`docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md`** + enlaces en contexto front. | `DONE` |
 | **M7-P7** | Mongo `products_read` + mapper + payload `PRODUCT_*` con `pricingMode` y `marginPercentOverride`. | `DONE` |
 | **M7-P8** | Tests margen + compuesto; `FRONTEND_INTEGRATION_CONTEXT.md` + Postman. | `TODO` |
 
 **Nota MVP:** recálculo tras compra = exponer **sugerencia** y que el front o un endpoint explícito aplique el nuevo `price` (evitar cambios silenciosos).
+
+**Tickets en espera (POS):** fase 1 = solo cliente (SQLite `held_tickets`); no son `Sale` ni `sync/push` hasta cobrar. Especificación para copiar al Flutter: **`docs/POS_TICKETS_EN_ESPERA_FRONT_BACKEND.md`**.
 
 ## 6) Criterios de listo (Definition of Done por modulo)
 
@@ -320,3 +322,4 @@ Un modulo se considera `DONE` cuando cumple:
 - 2026-04-06: **M7-P3**: respuestas API de producto enriquecidas con `effectiveMarginPercent`, `marginComputedPercent` (sobre `price`/`cost` almacenados), `suggestedPrice` = costo × (1 + margen efectivo/100) salvo `MANUAL_PRICE`; requiere contexto de tienda (`StoreConfiguredGuard`).
 - 2026-04-06: **M7-P5**: `POST /api/v1/products-with-stock` — mismo body que alta de producto + objeto `initialStock` (`quantity`, opcional `unitCostFunctional`, `reason`, `opId`); una transacción Postgres: `persistProductCreatedTx` + `InventoryService.applyAdjustTx` (`IN_ADJUST`, tienda del header).
 - 2026-04-06: **Idempotencia `POST /products-with-stock`**: cabecera obligatoria `Idempotency-Key` (UUID); modelo `IdempotencyRecord` (único por `storeId` + scope + key), hash SHA-256 del cuerpo canónico, respuesta en JSON con TTL `IDEMPOTENCY_TTL_HOURS` (default 168 h); transacción `Serializable` + reintentos en `P2034`.
+- 2026-04-06: **M7-P6**: política post-compra documentada — compra actualiza inventario/costo medio funcional; no actualiza `Product.price`/`Product.cost`; sugerencias en catálogo (`suggestedPrice`) usan `Product.cost`; para UX post-compra usar `GET /inventory/:productId` o `PATCH` de `cost`/`price`. Ver `docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md`.

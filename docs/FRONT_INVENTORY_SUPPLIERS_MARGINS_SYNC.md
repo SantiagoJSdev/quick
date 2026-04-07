@@ -58,7 +58,7 @@ Resumen alineado al PDF de backend; detalle y checkboxes en **`IMPLEMENTATION_TR
 | **P3** | Respuestas de producto enriquecidas — **hecho** (`effectiveMarginPercent`, `marginComputedPercent`, `suggestedPrice`; informativo; `MANUAL_PRICE` no muta `price` en servidor). |
 | **P4** | `PATCH` **business-settings** para margen global de tienda — **hecho** (monedas siguen en `PUT` onboarding). |
 | **P5** | **`POST /api/v1/products-with-stock`** — **hecho** (transacción + `{ product, inventory }`). |
-| **P6** | Tras **compra** (`IN_PURCHASE`): política documentada para **sugerir** nuevo precio según `pricingMode` (MVP: sin cambiar `price` en silencio si `MANUAL_PRICE`). |
+| **P6** | Post-compra / sugerencia precio — **hecho** (solo documentación): **`docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md`**. |
 | **P7** | Proyección **Mongo `products_read`** + payload outbox/sync con los nuevos campos para no depender siempre de Postgres en listado. |
 
 ---

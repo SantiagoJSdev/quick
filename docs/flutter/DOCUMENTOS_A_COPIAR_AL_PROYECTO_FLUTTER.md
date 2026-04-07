@@ -11,6 +11,8 @@ Copia estos archivos **desde el repo del backend** al **repo de tu app Flutter**
 | `docs/domain/MULTI_CURRENCY_ARCHITECTURE.md` | `docs/backend/MULTI_CURRENCY_ARCHITECTURE.md` |
 | `docs/api/RETURNS_POLICY.md` | `docs/backend/RETURNS_POLICY.md` (devoluciones, sprint posterior) |
 | `docs/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` | `docs/backend/FRONT_INVENTORY_SUPPLIERS_MARGINS_SYNC.md` (inventario UX + márgenes + proveedores; plan M7) |
+| `docs/BACKEND_POST_PURCHASE_PRICE_POLICY.md` | `docs/backend/BACKEND_POST_PURCHASE_PRICE_POLICY.md` (tras compra: no cambia `price` solo; inventario vs catálogo) |
+| `docs/POS_TICKETS_EN_ESPERA_FRONT_BACKEND.md` | `docs/backend/POS_TICKETS_EN_ESPERA_FRONT_BACKEND.md` (tickets en espera / held: SQLite, cobro → `POST /sales` o sync `SALE`) |
 | `docs/api/MONGO_PRODUCTS_READ.md` | `docs/backend/MONGO_PRODUCTS_READ.md` (opcional) |
 | `docs/api/PRODUCT_SOFT_DELETE_POLICY.md` | `docs/backend/PRODUCT_SOFT_DELETE_POLICY.md` (opcional) |
 | `postman/QuickMarket_API.postman_collection.json` | `assets/postman/QuickMarket_API.postman_collection.json` (opcional; importar también en Postman) |
