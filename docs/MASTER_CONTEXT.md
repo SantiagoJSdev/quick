@@ -161,8 +161,8 @@ Cuando se agregue funcionalidad nueva:
 
 ## 10) Documento operativo frontend
 
-- Plan detallado de ejecución offline + compras + fotos + configuración de URL:
-  - `docs/FRONT_OFFLINE_EXECUTION_PLAN_V2.md`
-- Contrato final corto para integración de fotos (upload + attach/detach):
-  - `docs/FRONT_PRODUCT_PHOTO_UPLOAD_CONTRACT.md`
+- Set vigente (usar solo estos):
+  - `docs/FRONT_OFFLINE_EXECUTION_PLAN_V2.md` (plan offline, checklist y QA)
+  - `docs/quickmarket_pos_pago_mixto_usd_ves.md` (contrato/flujo cobro mixto)
+  - `docs/FRONT_PRODUCT_PHOTO_UPLOAD_CONTRACT.md` (upload + attach/detach foto)
 
