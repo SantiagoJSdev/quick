@@ -34,8 +34,9 @@ export class UpdateProductDto {
   description?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v === null || typeof v === 'string')
   @IsString()
-  image?: string;
+  image?: string | null;
 
   @IsOptional()
   @IsEnum(ProductType)

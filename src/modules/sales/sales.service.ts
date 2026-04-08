@@ -11,10 +11,17 @@ import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.ser
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PosDeviceService } from '../pos-device/pos-device.service';
+import { salePaymentTx } from '../../common/payments/sale-payment.tx';
+import { salePaymentPrisma } from '../../common/payments/sale-payment.prisma';
 import type { CreateSaleDto } from './dto/create-sale.dto';
 import type { SalesListQueryDto } from './dto/sales-list-query.dto';
 import { decodeSaleListCursor, encodeSaleListCursor } from './sales-list-cursor';
 import { resolveSaleListUtcRange } from './sales-list-range';
+
+type SaleWithPayments = {
+  payments?: Array<{ amountDocumentCurrency: Prisma.Decimal }>;
+  totalDocument?: Prisma.Decimal | null;
+};
 
 /** Totales en funcional vía `convertAmountDocumentToFunctional` (Decimal sin redondeo intermedio). */
 @Injectable()
@@ -92,10 +99,15 @@ export class SalesService {
         where: { id: saleId, storeId },
       });
       if (existing) {
-        return tx.sale.findUniqueOrThrow({
+        const sale = await tx.sale.findUniqueOrThrow({
           where: { id: saleId },
           include: { saleLines: true },
         });
+        const payments = await salePaymentTx(tx).findMany({
+          where: { saleId: sale.id },
+          orderBy: { createdAt: 'asc' },
+        });
+        return this.attachPaymentSummary({ ...sale, payments });
       }
     }
 
@@ -184,6 +196,12 @@ export class SalesService {
       totalFunc = totalFunc.plus(lineTotalFunctional);
     }
 
+    const paymentCreates = this.buildSalePaymentCreates(dto, {
+      docCode,
+      fx,
+      totalDoc,
+    });
+
     let deviceId: string | null = null;
     if (dto.deviceId != null && dto.deviceId.trim() !== '') {
       deviceId = await this.posDevice.touchOrRegister(
@@ -194,7 +212,7 @@ export class SalesService {
       );
     }
 
-    return tx.sale.create({
+    const sale = await tx.sale.create({
       data: {
         id: saleId,
         storeId,
@@ -215,13 +233,209 @@ export class SalesService {
       },
       include: { saleLines: true },
     });
+
+    if (paymentCreates.length > 0) {
+      await salePaymentTx(tx).createMany({
+        data: paymentCreates.map((p) => ({
+          saleId: sale.id,
+          method: p.method,
+          amount: p.amount,
+          currencyCode: p.currencyCode,
+          amountDocumentCurrency: p.amountDocumentCurrency,
+          fxBaseCurrencyCode: p.fxBaseCurrencyCode,
+          fxQuoteCurrencyCode: p.fxQuoteCurrencyCode,
+          fxRateQuotePerBase: p.fxRateQuotePerBase,
+          exchangeRateDate: p.exchangeRateDate,
+          fxSource: p.fxSource,
+        })),
+      });
+    }
+
+    const payments = paymentCreates.length
+      ? await salePaymentTx(tx).findMany({
+          where: { saleId: sale.id },
+          orderBy: { createdAt: 'asc' },
+        })
+      : [];
+
+    return this.attachPaymentSummary({ ...sale, payments });
   }
 
-  findOne(storeId: string, saleId: string) {
-    return this.prisma.sale.findFirst({
+  async findOne(storeId: string, saleId: string) {
+    const sale = await this.prisma.sale.findFirst({
       where: { id: saleId, storeId },
-      include: { saleLines: { include: { product: { select: { sku: true, name: true } } } } },
+      include: {
+        saleLines: { include: { product: { select: { sku: true, name: true } } } },
+      },
     });
+    if (!sale) {
+      return null;
+    }
+
+    const payments = await salePaymentPrisma(this.prisma).findMany({
+      where: { saleId: sale.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    return this.attachPaymentSummary({ ...sale, payments });
+  }
+
+  private buildSalePaymentCreates(
+    dto: CreateSaleDto,
+    ctx: { docCode: string; fx: ResolvedFxSnapshot; totalDoc: Prisma.Decimal },
+  ): Array<{
+    method: string;
+    amount: Prisma.Decimal;
+    currencyCode: string;
+    amountDocumentCurrency: Prisma.Decimal;
+    fxBaseCurrencyCode: string | null;
+    fxQuoteCurrencyCode: string | null;
+    fxRateQuotePerBase: Prisma.Decimal | null;
+    exchangeRateDate: Date | null;
+    fxSource: string | null;
+  }> {
+    const rows = dto.payments ?? [];
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const docCode = ctx.docCode.toUpperCase();
+    let sumDoc = new Prisma.Decimal(0);
+    const creates: Array<{
+      method: string;
+      amount: Prisma.Decimal;
+      currencyCode: string;
+      amountDocumentCurrency: Prisma.Decimal;
+      fxBaseCurrencyCode: string | null;
+      fxQuoteCurrencyCode: string | null;
+      fxRateQuotePerBase: Prisma.Decimal | null;
+      exchangeRateDate: Date | null;
+      fxSource: string | null;
+    }> = [];
+
+    for (const p of rows) {
+      const method = p.method.trim();
+      const currencyCode = p.currencyCode.trim().toUpperCase();
+      if (!method) {
+        throw new BadRequestException({
+          code: 'PAYMENTS_INVALID_AMOUNT',
+          message: 'Payment method must not be empty',
+        });
+      }
+      if (!currencyCode) {
+        throw new BadRequestException({
+          code: 'PAYMENTS_INVALID_AMOUNT',
+          message: 'Payment currencyCode must not be empty',
+        });
+      }
+      const amount = new Prisma.Decimal(p.amount);
+      if (amount.lte(0)) {
+        throw new BadRequestException({
+          code: 'PAYMENTS_INVALID_AMOUNT',
+          message: 'Payment amount must be > 0',
+        });
+      }
+
+      const paymentFx = p.fxSnapshot ?? undefined;
+      if (currencyCode !== docCode && !paymentFx) {
+        throw new BadRequestException(
+          {
+            code: 'PAYMENTS_MISSING_FX_SNAPSHOT',
+            message:
+              'Payment fxSnapshot is required when payment currency differs from document currency',
+            paymentMethod: method,
+            paymentCurrencyCode: currencyCode,
+            documentCurrencyCode: docCode,
+          },
+        );
+      }
+
+      const fxBase = (paymentFx?.baseCurrencyCode ?? ctx.fx.fxBaseCurrencyCode).toUpperCase();
+      const fxQuote = (paymentFx?.quoteCurrencyCode ?? ctx.fx.fxQuoteCurrencyCode).toUpperCase();
+      const fxRate = new Prisma.Decimal(
+        paymentFx?.rateQuotePerBase ?? ctx.fx.fxRateQuotePerBase,
+      );
+
+      let amountDocumentCurrency = amount;
+      if (currencyCode !== docCode) {
+        try {
+          amountDocumentCurrency = convertAmountDocumentToFunctional(
+            amount,
+            currencyCode,
+            docCode,
+            fxBase,
+            fxQuote,
+            fxRate,
+          );
+        } catch {
+          throw new BadRequestException({
+            code: 'PAYMENTS_FX_PAIR_MISMATCH',
+            message:
+              'Payment FX pair does not match payment/document currencies',
+            paymentMethod: method,
+            paymentCurrencyCode: currencyCode,
+            documentCurrencyCode: docCode,
+            fxBaseCurrencyCode: fxBase,
+            fxQuoteCurrencyCode: fxQuote,
+          });
+        }
+      }
+
+      sumDoc = sumDoc.plus(amountDocumentCurrency);
+      creates.push({
+        method,
+        amount,
+        currencyCode,
+        amountDocumentCurrency,
+        fxBaseCurrencyCode: currencyCode !== docCode ? fxBase : null,
+        fxQuoteCurrencyCode: currencyCode !== docCode ? fxQuote : null,
+        fxRateQuotePerBase: currencyCode !== docCode ? fxRate : null,
+        exchangeRateDate:
+          currencyCode !== docCode
+            ? new Date(
+                paymentFx?.effectiveDate ??
+                  ctx.fx.exchangeRateDate.toISOString().slice(0, 10),
+              )
+            : null,
+        fxSource:
+          currencyCode !== docCode
+            ? (paymentFx?.fxSource ?? ctx.fx.fxSource ?? null)
+            : null,
+      });
+    }
+
+    // Allow tiny difference caused by decimal representation/rounding between client/backend.
+    const delta = sumDoc.minus(ctx.totalDoc).abs();
+    if (delta.gt(new Prisma.Decimal('0.01'))) {
+      const direction = sumDoc.gt(ctx.totalDoc) ? 'overpaid' : 'missing';
+      throw new BadRequestException(
+        {
+          code: 'PAYMENTS_TOTAL_MISMATCH',
+          message: 'Payments total does not match sale total',
+          direction,
+          sumPaymentsDocument: sumDoc.toString(),
+          totalDocument: ctx.totalDoc.toString(),
+          delta: delta.toString(),
+        },
+      );
+    }
+
+    return creates;
+  }
+
+  private attachPaymentSummary<T extends SaleWithPayments>(row: T) {
+    const payments = row.payments ?? [];
+    const paid = payments.reduce(
+      (acc, p) => acc.plus(new Prisma.Decimal(p.amountDocumentCurrency)),
+      new Prisma.Decimal(0),
+    );
+    const total = row.totalDocument ? new Prisma.Decimal(row.totalDocument) : null;
+    const change = total ? paid.minus(total) : null;
+    return {
+      ...row,
+      paymentsCount: payments.length,
+      paidDocumentTotal: paid.toString(),
+      changeDocument: change ? change.toString() : null,
+    };
   }
 
   /**

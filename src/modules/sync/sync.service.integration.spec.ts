@@ -161,6 +161,12 @@ const run = process.env.RUN_INTEGRATION === '1';
         baseCurrencyCode: 'USD',
         quoteCurrencyCode: 'VES',
       });
+      const rate = Number(fxLatest.rateQuotePerBase);
+      const totalVes = 200;
+      const vesPart = (totalVes - rate).toFixed(6);
+      if (Number(vesPart) <= 0) {
+        throw new Error('Test requires fx rate lower than total sale amount');
+      }
       const payload = {
         sale: {
           storeId,
@@ -168,7 +174,7 @@ const run = process.env.RUN_INTEGRATION === '1';
           documentCurrencyCode: 'VES',
           deviceId,
           lines: [
-            { productId, quantity: '1', price: '100' },
+            { productId, quantity: '1', price: totalVes.toString() },
           ],
           fxSnapshot: {
             baseCurrencyCode: fxLatest.baseCurrencyCode,
@@ -177,6 +183,25 @@ const run = process.env.RUN_INTEGRATION === '1';
             effectiveDate: fxLatest.effectiveDate,
             fxSource: fxLatest.source,
           },
+          payments: [
+            {
+              method: 'CASH_USD',
+              amount: '1',
+              currencyCode: 'USD',
+              fxSnapshot: {
+                baseCurrencyCode: fxLatest.baseCurrencyCode,
+                quoteCurrencyCode: fxLatest.quoteCurrencyCode,
+                rateQuotePerBase: fxLatest.rateQuotePerBase,
+                effectiveDate: fxLatest.effectiveDate,
+                fxSource: fxLatest.source,
+              },
+            },
+            {
+              method: 'CASH_VES',
+              amount: vesPart,
+              currencyCode: 'VES',
+            },
+          ],
         },
       };
       const ts = new Date().toISOString();
@@ -191,6 +216,21 @@ const run = process.env.RUN_INTEGRATION === '1';
       expect(first.failed).toHaveLength(0);
       expect(first.acked).toHaveLength(1);
       expect(first.acked[0].opId).toBe(opId);
+
+      const savedSale = await prisma.sale.findUnique({ where: { id: saleId } });
+      expect(savedSale).not.toBeNull();
+      const savedPayments = await (prisma as unknown as {
+        salePayment: {
+          findMany(args: { where: { saleId: string } }): Promise<
+            Array<{ method: string }>
+          >;
+        };
+      }).salePayment.findMany({ where: { saleId } });
+      expect(savedPayments).toHaveLength(2);
+      expect(savedPayments.map((p) => p.method).sort()).toEqual([
+        'CASH_USD',
+        'CASH_VES',
+      ]);
 
       const second = await service.push({ deviceId, ops: [op] }, storeId);
       expect(second.failed).toHaveLength(0);

@@ -84,6 +84,52 @@
             },
             "url": "{{baseUrl}}/api/v1/products"
           }
+        },
+        {
+          "name": "POST /api/v1/uploads/products-image (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/uploads/products-image",
+            "description": "Sube imagen y devuelve `{ fileId, url }`."
+          }
+        },
+        {
+          "name": "PATCH /api/v1/products/:id/image",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageUrl\": \"/api/v1/uploads/products-image/{{storeId}}/REPLACE_WITH_FILE_ID.jpg\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/image"
+          }
+        },
+        {
+          "name": "DELETE /api/v1/products/:id/image",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/image"
+          }
         }
       ]
     },
@@ -149,7 +195,7 @@
       "name": "Sales",
       "item": [
         {
-          "name": "POST /api/v1/sales",
+          "name": "POST /api/v1/sales (mixed payments)",
           "request": {
             "method": "POST",
             "header": [
@@ -158,10 +204,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"documentCurrencyCode\": \"VES\",\n  \"lines\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": \"1\",\n      \"price\": \"10.00\"\n    }\n  ],\n  \"fxSnapshot\": {\n    \"baseCurrencyCode\": \"USD\",\n    \"quoteCurrencyCode\": \"VES\",\n    \"rateQuotePerBase\": \"36.50\",\n    \"effectiveDate\": \"2026-04-04\",\n    \"fxSource\": \"POS_OFFLINE\"\n  }\n}"
+              "raw": "{\n  \"documentCurrencyCode\": \"VES\",\n  \"lines\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": \"1\",\n      \"price\": \"200.00\"\n    }\n  ],\n  \"fxSnapshot\": {\n    \"baseCurrencyCode\": \"USD\",\n    \"quoteCurrencyCode\": \"VES\",\n    \"rateQuotePerBase\": \"36.50\",\n    \"effectiveDate\": \"2026-04-04\",\n    \"fxSource\": \"POS_OFFLINE\"\n  },\n  \"payments\": [\n    {\n      \"method\": \"CASH_USD\",\n      \"amount\": \"1\",\n      \"currencyCode\": \"USD\",\n      \"fxSnapshot\": {\n        \"baseCurrencyCode\": \"USD\",\n        \"quoteCurrencyCode\": \"VES\",\n        \"rateQuotePerBase\": \"36.50\",\n        \"effectiveDate\": \"2026-04-04\",\n        \"fxSource\": \"POS_OFFLINE\"\n      }\n    },\n    {\n      \"method\": \"CASH_VES\",\n      \"amount\": \"163.50\",\n      \"currencyCode\": \"VES\"\n    }\n  ]\n}"
             },
             "url": "{{baseUrl}}/api/v1/sales",
-            "description": "Requiere stock del producto (ej. POST inventory/adjustments IN antes). Copia response.id a variable saleId para GET."
+            "description": "Ejemplo de cobro mixto con `payments`. La suma convertida a VES debe coincidir con el total de la venta. Requiere stock del producto (ej. POST inventory/adjustments IN antes)."
           }
         },
         {
@@ -328,7 +374,7 @@
           }
         },
         {
-          "name": "POST /api/v1/sync/push (SALE)",
+          "name": "POST /api/v1/sync/push (SALE + payments)",
           "request": {
             "method": "POST",
             "header": [
@@ -337,10 +383,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"postman-device-sale\",\n  \"ops\": [\n    {\n      \"opId\": \"bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb\",\n      \"opType\": \"SALE\",\n      \"timestamp\": \"2026-04-04T16:00:00.000Z\",\n      \"payload\": {\n        \"sale\": {\n          \"storeId\": \"{{storeId}}\",\n          \"documentCurrencyCode\": \"VES\",\n          \"lines\": [\n            {\n              \"productId\": \"{{productId}}\",\n              \"quantity\": \"1\",\n              \"price\": \"10.00\"\n            }\n          ],\n          \"fxSnapshot\": {\n            \"baseCurrencyCode\": \"USD\",\n            \"quoteCurrencyCode\": \"VES\",\n            \"rateQuotePerBase\": \"36.50\",\n            \"effectiveDate\": \"2026-04-04\",\n            \"fxSource\": \"POS_OFFLINE\"\n          }\n        }\n      }\n    }\n  ]\n}"
+              "raw": "{\n  \"deviceId\": \"postman-device-sale\",\n  \"ops\": [\n    {\n      \"opId\": \"bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb\",\n      \"opType\": \"SALE\",\n      \"timestamp\": \"2026-04-04T16:00:00.000Z\",\n      \"payload\": {\n        \"sale\": {\n          \"storeId\": \"{{storeId}}\",\n          \"documentCurrencyCode\": \"VES\",\n          \"lines\": [\n            {\n              \"productId\": \"{{productId}}\",\n              \"quantity\": \"1\",\n              \"price\": \"200.00\"\n            }\n          ],\n          \"fxSnapshot\": {\n            \"baseCurrencyCode\": \"USD\",\n            \"quoteCurrencyCode\": \"VES\",\n            \"rateQuotePerBase\": \"36.50\",\n            \"effectiveDate\": \"2026-04-04\",\n            \"fxSource\": \"POS_OFFLINE\"\n          },\n          \"payments\": [\n            {\n              \"method\": \"CASH_USD\",\n              \"amount\": \"1\",\n              \"currencyCode\": \"USD\",\n              \"fxSnapshot\": {\n                \"baseCurrencyCode\": \"USD\",\n                \"quoteCurrencyCode\": \"VES\",\n                \"rateQuotePerBase\": \"36.50\",\n                \"effectiveDate\": \"2026-04-04\",\n                \"fxSource\": \"POS_OFFLINE\"\n              }\n            },\n            {\n              \"method\": \"CASH_VES\",\n              \"amount\": \"163.50\",\n              \"currencyCode\": \"VES\"\n            }\n          ]\n        }\n      }\n    }\n  ]\n}"
             },
             "url": "{{baseUrl}}/api/v1/sync/push",
-            "description": "Cambia opId (UUID v4) en cada prueba repetida. Mismo requisito de stock que POST /sales."
+            "description": "Ejemplo SALE offline con pago mixto (`payload.sale.payments`). Cambia opId (UUID v4) en cada prueba repetida. Mismo requisito de stock que POST /sales."
           }
         },
         {

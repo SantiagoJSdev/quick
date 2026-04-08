@@ -375,7 +375,26 @@ model Sale {
   totalFunctional        Decimal?   @db.Decimal(65, 30)
 
   saleLines   SaleLine[]
+  payments    SalePayment[]
   saleReturns SaleReturn[] @relation("SaleReturnFromSale")
+}
+
+model SalePayment {
+  id                   String   @id @default(uuid())
+  saleId               String
+  sale                 Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  method               String
+  amount               Decimal  @db.Decimal(65, 30)
+  currencyCode         String
+  amountDocumentCurrency Decimal @db.Decimal(65, 30)
+  fxBaseCurrencyCode   String?
+  fxQuoteCurrencyCode  String?
+  fxRateQuotePerBase   Decimal? @db.Decimal(30, 10)
+  exchangeRateDate     DateTime? @db.Date
+  fxSource             String?
+  createdAt            DateTime @default(now())
+
+  @@index([saleId])
 }
 
 model SaleReturn {

@@ -468,7 +468,15 @@ export class ProductsService {
     await this.findProductByIdOrThrow(id);
 
     return this.prisma.$transaction(async (tx) => {
-      const { price, cost, sku, barcode, marginPercentOverride, ...rest } = dto;
+      const {
+        price,
+        cost,
+        sku,
+        barcode,
+        image,
+        marginPercentOverride,
+        ...rest
+      } = dto;
       const marginParsed = this.parseMarginPercentOverride(
         marginPercentOverride,
         'update',
@@ -482,6 +490,7 @@ export class ProductsService {
         ...(barcode !== undefined
           ? { barcode: barcode.trim() ? barcode.trim() : null }
           : {}),
+        ...(image !== undefined ? { image: this.normalizeImageInput(image) } : {}),
         ...(marginParsed !== undefined
           ? { marginPercentOverride: marginParsed }
           : {}),
@@ -580,6 +589,15 @@ export class ProductsService {
 
   /** Barcode: solo persiste si hay texto tras trim; si no, `null` (único sparse en Postgres). */
   private normalizeBarcodeInput(raw?: string | null): string | null {
+    if (raw === undefined || raw === null) {
+      return null;
+    }
+    const t = raw.trim();
+    return t.length > 0 ? t : null;
+  }
+
+  /** Image URL/path: empty string -> null, trim when present. */
+  private normalizeImageInput(raw?: string | null): string | null {
     if (raw === undefined || raw === null) {
       return null;
     }

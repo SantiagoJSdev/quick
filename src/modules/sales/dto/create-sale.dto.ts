@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  MinLength,
   IsNumberString,
   IsOptional,
   IsString,
@@ -35,6 +36,36 @@ export class CreateSaleLineDto {
   discount?: string;
 }
 
+export class SalePaymentInputDto {
+  @ApiProperty({
+    example: 'CASH_USD',
+    description: 'Método de pago (ej. CASH_USD, CASH_VES, CARD).',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  method!: string;
+
+  @ApiProperty({
+    example: '12.00',
+    description: 'Monto del pago en `currencyCode`.',
+  })
+  @IsNumberString()
+  amount!: string;
+
+  @ApiProperty({ example: 'USD' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(10)
+  currencyCode!: string;
+
+  @ApiPropertyOptional({ type: FxSnapshotDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => FxSnapshotDto)
+  fxSnapshot?: FxSnapshotDto;
+}
+
 export class CreateSaleDto {
   @ApiPropertyOptional({
     description:
@@ -60,6 +91,19 @@ export class CreateSaleDto {
   @ValidateNested({ each: true })
   @Type(() => CreateSaleLineDto)
   lines!: CreateSaleLineDto[];
+
+  @ApiPropertyOptional({
+    type: [SalePaymentInputDto],
+    description:
+      'Detalle opcional de cobro mixto. No altera inventario; sirve para trazabilidad/reporte.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => SalePaymentInputDto)
+  payments?: SalePaymentInputDto[];
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()

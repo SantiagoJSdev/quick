@@ -61,6 +61,9 @@ Describe lo implementado, flujos reales, módulos, contratos mínimos y cómo ex
 ### 3.5 Ventas / compras / devoluciones
 
 - `POST /sales` + historial (`GET /sales`, `GET /sales/:id`).
+- `POST /sales` soporta `payments` opcional para cobro mixto (USD/VES u otros métodos).
+- `GET /sales/:id` devuelve `payments` de la venta.
+- `sync/push` `SALE` acepta `payload.sale.payments`.
 - `POST /purchases`, `GET /purchases/:id`.
 - `POST /sale-returns`, `GET /sale-returns/:id`.
 - Multi-moneda con snapshot FX persistido por documento confirmado.
@@ -105,7 +108,9 @@ Describe lo implementado, flujos reales, módulos, contratos mínimos y cómo ex
 - `GET /exchange-rates/latest`
 - `POST /products`
 - `PATCH /products/:id`
+- `PATCH /products/:id/image` / `DELETE /products/:id/image`
 - `GET /products` / `GET /products/:id`
+- `POST /uploads/products-image` / `GET /uploads/products-image/:storeId/:fileName`
 - `POST /products-with-stock` (**con `Idempotency-Key`**)
 - `GET /inventory` / `POST /inventory/adjustments`
 - `POST /sales` / `GET /sales`
@@ -153,4 +158,11 @@ Cuando se agregue funcionalidad nueva:
 - Tests integrales ampliados para M7 (`M7-P8`).
 - Opcional fase 2 tickets en espera: módulo backend `parked-sales` multi-dispositivo.
 - Mejoras reservas inventario (`reserved`) y reportería de utilidad real.
+
+## 10) Documento operativo frontend
+
+- Plan detallado de ejecución offline + compras + fotos + configuración de URL:
+  - `docs/FRONT_OFFLINE_EXECUTION_PLAN_V2.md`
+- Contrato final corto para integración de fotos (upload + attach/detach):
+  - `docs/FRONT_PRODUCT_PHOTO_UPLOAD_CONTRACT.md`
 

@@ -1,5 +1,9 @@
 import type { FxSnapshotDto } from '../exchange-rates/dto/fx-snapshot.dto';
-import type { CreateSaleDto, CreateSaleLineDto } from './dto/create-sale.dto';
+import type {
+  CreateSaleDto,
+  CreateSaleLineDto,
+  SalePaymentInputDto,
+} from './dto/create-sale.dto';
 
 export type ParsedSyncSalePayload = {
   storeId: string;
@@ -64,6 +68,50 @@ export function parseSalePayload(
     }
   }
 
+  const payments: SalePaymentInputDto[] = [];
+  if (Array.isArray(s.payments)) {
+    for (const row of s.payments as unknown[]) {
+      if (typeof row !== 'object' || row === null) {
+        return null;
+      }
+      const p = row as Record<string, unknown>;
+      if (
+        typeof p.method !== 'string' ||
+        typeof p.amount !== 'string' ||
+        typeof p.currencyCode !== 'string'
+      ) {
+        return null;
+      }
+
+      let paymentFx: FxSnapshotDto | undefined;
+      if (typeof p.fxSnapshot === 'object' && p.fxSnapshot !== null) {
+        const f = p.fxSnapshot as Record<string, unknown>;
+        if (
+          typeof f.baseCurrencyCode !== 'string' ||
+          typeof f.quoteCurrencyCode !== 'string' ||
+          typeof f.rateQuotePerBase !== 'string' ||
+          typeof f.effectiveDate !== 'string'
+        ) {
+          return null;
+        }
+        paymentFx = {
+          baseCurrencyCode: f.baseCurrencyCode,
+          quoteCurrencyCode: f.quoteCurrencyCode,
+          rateQuotePerBase: f.rateQuotePerBase,
+          effectiveDate: f.effectiveDate,
+          fxSource: typeof f.fxSource === 'string' ? f.fxSource : undefined,
+        };
+      }
+
+      payments.push({
+        method: p.method,
+        amount: p.amount,
+        currencyCode: p.currencyCode,
+        fxSnapshot: paymentFx,
+      });
+    }
+  }
+
   const dto: CreateSaleDto = {
     id: typeof s.id === 'string' ? s.id : undefined,
     documentCurrencyCode:
@@ -75,6 +123,7 @@ export function parseSalePayload(
     deviceId: typeof s.deviceId === 'string' ? s.deviceId : undefined,
     appVersion: typeof s.appVersion === 'string' ? s.appVersion : undefined,
     fxSnapshot,
+    payments: payments.length > 0 ? payments : undefined,
   };
 
   return { storeId: s.storeId, dto };

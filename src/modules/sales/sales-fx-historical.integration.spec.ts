@@ -152,5 +152,50 @@ const run = process.env.RUN_INTEGRATION === '1';
       });
       expect(sale2.fxRateQuotePerBase?.toString()).not.toBe(snap.fxRate);
     });
+
+    it('persists mixed payments and returns them in sale detail', async () => {
+      const fxLatest = await exchangeRates.findLatest({
+        storeId,
+        baseCurrencyCode: 'USD',
+        quoteCurrencyCode: 'VES',
+      });
+      const rate = Number(fxLatest.rateQuotePerBase);
+      const totalVes = 200;
+      const vesPart = (totalVes - rate).toFixed(6);
+      if (Number(vesPart) <= 0) {
+        throw new Error('Test requires fx rate lower than total sale amount');
+      }
+
+      const sale = await sales.create(storeId, {
+        documentCurrencyCode: 'VES',
+        lines: [{ productId, quantity: '1', price: totalVes.toString() }],
+        payments: [
+          {
+            method: 'CASH_USD',
+            amount: '1',
+            currencyCode: 'USD',
+            fxSnapshot: {
+              baseCurrencyCode: fxLatest.baseCurrencyCode,
+              quoteCurrencyCode: fxLatest.quoteCurrencyCode,
+              rateQuotePerBase: fxLatest.rateQuotePerBase,
+              effectiveDate: fxLatest.effectiveDate,
+              fxSource: fxLatest.source,
+            },
+          },
+          {
+            method: 'CASH_VES',
+            amount: vesPart,
+            currencyCode: 'VES',
+          },
+        ],
+      });
+
+      const detail = await sales.findOne(storeId, sale.id);
+      expect(detail).not.toBeNull();
+      const payments = (detail as { payments?: Array<{ method: string }> }).payments;
+      expect(Array.isArray(payments)).toBe(true);
+      expect(payments).toHaveLength(2);
+      expect(payments?.map((p) => p.method)).toEqual(['CASH_USD', 'CASH_VES']);
+    });
   },
 );
