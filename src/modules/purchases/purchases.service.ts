@@ -103,6 +103,12 @@ export class PurchasesService {
       throw new BadRequestException('Supplier is inactive');
     }
 
+    const supplierInvoiceReference =
+      dto.supplierInvoiceReference != null &&
+      dto.supplierInvoiceReference.trim().length > 0
+        ? dto.supplierInvoiceReference.trim().slice(0, 120)
+        : null;
+
     const rate = fx.fxRateQuotePerBase;
     const lineCreates: Prisma.PurchaseLineCreateWithoutPurchaseInput[] = [];
     let totalDoc = new Prisma.Decimal(0);
@@ -183,6 +189,7 @@ export class PurchasesService {
         fxSource: fx.fxSource,
         totalDocument: totalDoc,
         totalFunctional: totalFunc,
+        supplierInvoiceReference,
         lines: { create: lineCreates },
       },
       include: { lines: true },

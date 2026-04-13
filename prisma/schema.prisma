@@ -263,6 +263,9 @@ model Purchase {
   totalDocument          Decimal?   @db.Decimal(65, 30)
   totalFunctional        Decimal?   @db.Decimal(65, 30)
 
+  /// Número de factura, nota de entrega u otra referencia del documento del proveedor.
+  supplierInvoiceReference String?
+
   lines        PurchaseLine[]
 
   createdAt    DateTime @default(now())
@@ -479,6 +482,8 @@ model SyncOperation {
   serverVersion   Int?
   serverAppliedAt DateTime?
   failureReason   String?
+  /// Mensaje concreto (misma semántica que `failed[].details` en la respuesta de `sync/push`).
+  failureDetails  String?   @db.Text
 
   @@index([storeId, clientTimestamp])
 }

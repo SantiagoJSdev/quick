@@ -10,27 +10,57 @@ export type ParsedSyncSalePayload = {
   dto: CreateSaleDto;
 };
 
+export type SalePayloadParseResult =
+  | { ok: true; data: ParsedSyncSalePayload }
+  | { ok: false; details: string };
+
+function typeLabel(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  return typeof v;
+}
+
 /** Interpreta `payload.sale` de `sync/push` con `opType: SALE`. */
 export function parseSalePayload(
   payload: Record<string, unknown>,
-): ParsedSyncSalePayload | null {
+): SalePayloadParseResult {
   const raw = payload.sale;
   if (typeof raw !== 'object' || raw === null) {
-    return null;
+    return {
+      ok: false,
+      details:
+        'payload.sale must be an object. Send { "payload": { "sale": { "storeId", "lines": [...] } } }.',
+    };
   }
   const s = raw as Record<string, unknown>;
-  if (typeof s.storeId !== 'string' || !Array.isArray(s.lines)) {
-    return null;
+  if (typeof s.storeId !== 'string') {
+    return {
+      ok: false,
+      details: `sale.storeId must be a string (UUID). Got ${typeLabel(s.storeId)}.`,
+    };
+  }
+  if (!Array.isArray(s.lines)) {
+    return {
+      ok: false,
+      details: `sale.lines must be a non-empty array. Got ${typeLabel(s.lines)}.`,
+    };
   }
   const linesIn = s.lines as unknown[];
   if (linesIn.length === 0) {
-    return null;
+    return {
+      ok: false,
+      details: 'sale.lines must contain at least one line.',
+    };
   }
 
   const lines: CreateSaleLineDto[] = [];
-  for (const row of linesIn) {
+  for (let i = 0; i < linesIn.length; i++) {
+    const row = linesIn[i];
     if (typeof row !== 'object' || row === null) {
-      return null;
+      return {
+        ok: false,
+        details: `sale.lines[${i}] must be an object.`,
+      };
     }
     const L = row as Record<string, unknown>;
     if (
@@ -38,7 +68,12 @@ export function parseSalePayload(
       typeof L.quantity !== 'string' ||
       typeof L.price !== 'string'
     ) {
-      return null;
+      return {
+        ok: false,
+        details:
+          `sale.lines[${i}]: productId, quantity and price must be JSON strings (e.g. "2" and "10.50"), not numbers — Dart/Flutter often encodes double/int; convert to String before JSON. ` +
+          `Got productId=${typeLabel(L.productId)}, quantity=${typeLabel(L.quantity)}, price=${typeLabel(L.price)}.`,
+      };
     }
     lines.push({
       productId: L.productId,
@@ -66,13 +101,18 @@ export function parseSalePayload(
         fxSource: typeof f.fxSource === 'string' ? f.fxSource : undefined,
       };
     }
+    /* Objeto parcial: se ignora (mismo comportamiento que antes); el servidor resuelve FX por settings. */
   }
 
   const payments: SalePaymentInputDto[] = [];
   if (Array.isArray(s.payments)) {
-    for (const row of s.payments as unknown[]) {
+    for (let i = 0; i < s.payments.length; i++) {
+      const row = (s.payments as unknown[])[i];
       if (typeof row !== 'object' || row === null) {
-        return null;
+        return {
+          ok: false,
+          details: `sale.payments[${i}] must be an object.`,
+        };
       }
       const p = row as Record<string, unknown>;
       if (
@@ -80,7 +120,12 @@ export function parseSalePayload(
         typeof p.amount !== 'string' ||
         typeof p.currencyCode !== 'string'
       ) {
-        return null;
+        return {
+          ok: false,
+          details:
+            `sale.payments[${i}]: method, amount and currencyCode must be strings. ` +
+            `Got method=${typeLabel(p.method)}, amount=${typeLabel(p.amount)}, currencyCode=${typeLabel(p.currencyCode)}.`,
+        };
       }
 
       let paymentFx: FxSnapshotDto | undefined;
@@ -92,7 +137,11 @@ export function parseSalePayload(
           typeof f.rateQuotePerBase !== 'string' ||
           typeof f.effectiveDate !== 'string'
         ) {
-          return null;
+          return {
+            ok: false,
+            details:
+              `sale.payments[${i}].fxSnapshot must include baseCurrencyCode, quoteCurrencyCode, rateQuotePerBase, effectiveDate (all strings), or omit fxSnapshot entirely.`,
+          };
         }
         paymentFx = {
           baseCurrencyCode: f.baseCurrencyCode,
@@ -126,5 +175,5 @@ export function parseSalePayload(
     payments: payments.length > 0 ? payments : undefined,
   };
 
-  return { storeId: s.storeId, dto };
+  return { ok: true, data: { storeId: s.storeId, dto } };
 }

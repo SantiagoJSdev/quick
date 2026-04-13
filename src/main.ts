@@ -1,10 +1,11 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   if (process.env.TRUST_PROXY === '1') {
     app.getHttpAdapter().getInstance().set('trust proxy', 1);
@@ -65,6 +66,12 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  await app.listen(process.env.PORT ?? 3000);
+  const port = Number(process.env.PORT ?? 3000);
+  await app.listen(port);
+
+  const base = `http://127.0.0.1:${port}`;
+  logger.log(
+    `[API_READY] Quick Market HTTP escuchando — base ${base} | API ${base}/api/v1 | docs ${base}/api/docs`,
+  );
 }
 bootstrap();

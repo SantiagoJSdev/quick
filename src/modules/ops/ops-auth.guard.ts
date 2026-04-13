@@ -60,9 +60,13 @@ export class OpsAuthGuard implements CanActivate {
     if (!apiKey && allowlist.length === 0) {
       if (!this.warnedOpenAccess) {
         this.warnedOpenAccess = true;
-        this.logger.warn(
-          'OPS_API_KEY and OPS_IP_ALLOWLIST unset: /ops/* is open. Set OPS_API_KEY (and optionally OPS_IP_ALLOWLIST) in production.',
-        );
+        const msg =
+          'OPS_API_KEY and OPS_IP_ALLOWLIST unset: /ops/* is open. Set OPS_API_KEY (and optionally OPS_IP_ALLOWLIST) in production.';
+        if (process.env.NODE_ENV === 'production') {
+          this.logger.warn(msg);
+        } else {
+          this.logger.verbose(msg);
+        }
       }
       return true;
     }

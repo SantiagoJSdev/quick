@@ -4,6 +4,24 @@ import type {
   CreatePurchaseLineDto,
 } from './dto/create-purchase.dto';
 
+const PURCHASE_REF_MAX_LEN = 120;
+
+function parseSupplierInvoiceReference(
+  p: Record<string, unknown>,
+): string | undefined {
+  const raw = p.supplierInvoiceReference ?? p.reference;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const t = raw.trim();
+  if (!t) {
+    return undefined;
+  }
+  return t.length > PURCHASE_REF_MAX_LEN
+    ? t.slice(0, PURCHASE_REF_MAX_LEN)
+    : t;
+}
+
 export type ParsedSyncPurchasePayload = {
   storeId: string;
   dto: CreatePurchaseDto;
@@ -77,6 +95,7 @@ export function parsePurchasePayload(
       typeof p.documentCurrencyCode === 'string'
         ? p.documentCurrencyCode
         : undefined,
+    supplierInvoiceReference: parseSupplierInvoiceReference(p),
     lines,
     fxSnapshot,
   };

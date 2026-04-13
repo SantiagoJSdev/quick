@@ -64,7 +64,7 @@ Describe lo implementado, flujos reales, módulos, contratos mínimos y cómo ex
 - `POST /sales` soporta `payments` opcional para cobro mixto (USD/VES u otros métodos).
 - `GET /sales/:id` devuelve `payments` de la venta.
 - `sync/push` `SALE` acepta `payload.sale.payments`.
-- `POST /purchases`, `GET /purchases/:id`.
+- `POST /purchases`, `GET /purchases/:id` (campo opcional **`supplierInvoiceReference`**: factura/referencia proveedor; ver **`docs/api/PURCHASES.md`**).
 - `POST /sale-returns`, `GET /sale-returns/:id`.
 - Multi-moneda con snapshot FX persistido por documento confirmado.
 
@@ -73,6 +73,10 @@ Describe lo implementado, flujos reales, módulos, contratos mínimos y cómo ex
 - `POST /sync/push`: `NOOP`, `SALE`, `SALE_RETURN`, `PURCHASE_RECEIVE`, `INVENTORY_ADJUST`.
 - `GET /sync/pull`: cambios de catálogo (`PRODUCT_*`) desde `ServerChangeLog`.
 - `opId` idempotente para evitar duplicados de efectos reales.
+
+### 3.6.1 Observabilidad sync (ops)
+
+- `GET /ops/metrics` expone conteos de `SyncOperation` y, si hay fallos, **`sync.failedSamples`** (hasta 30 ops `failed` con `opId`, `opType`, `deviceId`, `failureReason`, etc.) para alinear con reintentos del POS. Ver **`docs/api/OPS_METRICS.md`**.
 
 ### 3.7 Proveedores
 

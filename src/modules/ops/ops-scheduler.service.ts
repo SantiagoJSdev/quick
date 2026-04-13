@@ -93,8 +93,27 @@ export class OpsSchedulerService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (sync.failedCount > 0) {
+        const detail =
+          sync.failedSamples.length > 0
+            ? sync.failedSamples.map((s) => {
+                const msg = s.failureDetails ?? s.failureReason;
+                const truncated =
+                  msg && msg.length > 400
+                    ? `${msg.slice(0, 400)}…`
+                    : msg;
+                return {
+                  opId: s.opId,
+                  opType: s.opType,
+                  deviceId: s.deviceId,
+                  storeId: s.storeId,
+                  code: s.failureReason,
+                  message: truncated,
+                  at: s.clientTimestamp,
+                };
+              })
+            : [];
         this.logger.warn(
-          `Sync operations failed (historical): ${sync.failedCount}`,
+          `Sync operations failed (historical): ${sync.failedCount} — correlate pending POS ops by opId | ${JSON.stringify(detail)}`,
         );
       }
 

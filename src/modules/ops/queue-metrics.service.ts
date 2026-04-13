@@ -12,12 +12,26 @@ export type OutboxMetrics = {
   pendingLagSeconds: number | null;
 };
 
+/** Filas fallidas recientes para correlacionar con el cliente (mismo `opId` que el POS reintenta). */
+export type FailedSyncOperationSample = {
+  opId: string;
+  storeId: string;
+  deviceId: string;
+  opType: string;
+  failureReason: string | null;
+  /** Mismo texto que `failed[].details` en `POST /sync/push` (vacío en filas antiguas). */
+  failureDetails: string | null;
+  clientTimestamp: string;
+};
+
 export type SyncMetrics = {
   byStatus: Record<string, number>;
   pendingCount: number;
   failedCount: number;
   appliedCount: number;
   storeVersions: { storeId: string; serverVersion: number }[];
+  /** Hasta 30 registros `status=failed` más recientes (por `clientTimestamp` desc). Vacío si no hay fallos. */
+  failedSamples: FailedSyncOperationSample[];
 };
 
 @Injectable()
@@ -84,12 +98,41 @@ export class QueueMetricsService {
       orderBy: { storeId: 'asc' },
     });
 
+    const failedSamples: FailedSyncOperationSample[] =
+      failedCount > 0
+        ? (
+            await this.prisma.syncOperation.findMany({
+              where: { status: 'failed' },
+              orderBy: { clientTimestamp: 'desc' },
+              take: 30,
+              select: {
+                opId: true,
+                storeId: true,
+                deviceId: true,
+                opType: true,
+                failureReason: true,
+                failureDetails: true,
+                clientTimestamp: true,
+              },
+            })
+          ).map((r) => ({
+            opId: r.opId,
+            storeId: r.storeId,
+            deviceId: r.deviceId,
+            opType: r.opType,
+            failureReason: r.failureReason,
+            failureDetails: r.failureDetails,
+            clientTimestamp: r.clientTimestamp.toISOString(),
+          }))
+        : [];
+
     return {
       byStatus,
       pendingCount,
       failedCount,
       appliedCount,
       storeVersions,
+      failedSamples,
     };
   }
 }

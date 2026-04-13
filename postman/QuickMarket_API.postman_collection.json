@@ -266,7 +266,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"documentCurrencyCode\": \"VES\",\n  \"lines\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": \"2\",\n      \"unitCost\": \"3.00\"\n    }\n  ],\n  \"fxSnapshot\": {\n    \"baseCurrencyCode\": \"USD\",\n    \"quoteCurrencyCode\": \"VES\",\n    \"rateQuotePerBase\": \"36.50\",\n    \"effectiveDate\": \"2026-04-04\",\n    \"fxSource\": \"POS_OFFLINE\"\n  }\n}"
+              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"documentCurrencyCode\": \"VES\",\n  \"supplierInvoiceReference\": \"FAC-POSTMAN-001\",\n  \"lines\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": \"2\",\n      \"unitCost\": \"3.00\"\n    }\n  ],\n  \"fxSnapshot\": {\n    \"baseCurrencyCode\": \"USD\",\n    \"quoteCurrencyCode\": \"VES\",\n    \"rateQuotePerBase\": \"36.50\",\n    \"effectiveDate\": \"2026-04-04\",\n    \"fxSource\": \"POS_OFFLINE\"\n  }\n}"
             },
             "url": "{{baseUrl}}/api/v1/purchases",
             "description": "Rellena supplierId (seed crea un proveedor). Copia response.id a purchaseId."
@@ -415,7 +415,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"postman-device-purchase\",\n  \"ops\": [\n    {\n      \"opId\": \"cccccccc-cccc-4ccc-cccc-cccccccccccc\",\n      \"opType\": \"PURCHASE_RECEIVE\",\n      \"timestamp\": \"2026-04-04T17:00:00.000Z\",\n      \"payload\": {\n        \"purchase\": {\n          \"storeId\": \"{{storeId}}\",\n          \"supplierId\": \"{{supplierId}}\",\n          \"documentCurrencyCode\": \"VES\",\n          \"lines\": [\n            {\n              \"productId\": \"{{productId}}\",\n              \"quantity\": \"1\",\n              \"unitCost\": \"2.00\"\n            }\n          ],\n          \"fxSnapshot\": {\n            \"baseCurrencyCode\": \"USD\",\n            \"quoteCurrencyCode\": \"VES\",\n            \"rateQuotePerBase\": \"36.50\",\n            \"effectiveDate\": \"2026-04-04\",\n            \"fxSource\": \"POS_OFFLINE\"\n          }\n        }\n      }\n    }\n  ]\n}"
+              "raw": "{\n  \"deviceId\": \"postman-device-purchase\",\n  \"ops\": [\n    {\n      \"opId\": \"cccccccc-cccc-4ccc-cccc-cccccccccccc\",\n      \"opType\": \"PURCHASE_RECEIVE\",\n      \"timestamp\": \"2026-04-04T17:00:00.000Z\",\n      \"payload\": {\n        \"purchase\": {\n          \"storeId\": \"{{storeId}}\",\n          \"supplierId\": \"{{supplierId}}\",\n          \"documentCurrencyCode\": \"VES\",\n          \"supplierInvoiceReference\": \"FAC-SYNC-001\",\n          \"lines\": [\n            {\n              \"productId\": \"{{productId}}\",\n              \"quantity\": \"1\",\n              \"unitCost\": \"2.00\"\n            }\n          ],\n          \"fxSnapshot\": {\n            \"baseCurrencyCode\": \"USD\",\n            \"quoteCurrencyCode\": \"VES\",\n            \"rateQuotePerBase\": \"36.50\",\n            \"effectiveDate\": \"2026-04-04\",\n            \"fxSource\": \"POS_OFFLINE\"\n          }\n        }\n      }\n    }\n  ]\n}"
             },
             "url": "{{baseUrl}}/api/v1/sync/push",
             "description": "Nuevo opId UUID v4 por prueba. Requiere supplierId y productId válidos."

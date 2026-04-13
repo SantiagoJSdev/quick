@@ -45,6 +45,45 @@ export type SyncPullResult = {
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
 
+  private static readonly MAX_FAILURE_DETAILS_LEN = 4000;
+
+  private truncateFailureDetails(details: string): string {
+    const max = SyncService.MAX_FAILURE_DETAILS_LEN;
+    if (details.length <= max) {
+      return details;
+    }
+    return `${details.slice(0, max - 1)}…`;
+  }
+
+  /** Persiste fallo con el mismo texto que se devuelve en `POST /sync/push` → `failed[].details`. */
+  private async recordFailedSyncOp(
+    tx: Prisma.TransactionClient,
+    params: {
+      opId: string;
+      storeId: string;
+      deviceId: string;
+      opType: string;
+      payload: Prisma.InputJsonValue;
+      clientTimestamp: Date;
+      failureReason: string;
+      failureDetails: string;
+    },
+  ): Promise<void> {
+    await tx.syncOperation.create({
+      data: {
+        opId: params.opId,
+        storeId: params.storeId,
+        deviceId: params.deviceId,
+        opType: params.opType,
+        payload: params.payload,
+        clientTimestamp: params.clientTimestamp,
+        status: 'failed',
+        failureReason: params.failureReason,
+        failureDetails: this.truncateFailureDetails(params.failureDetails),
+      },
+    });
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
@@ -189,7 +228,9 @@ export class SyncService {
         buckets.failed.push({
           opId: op.opId,
           reason: existing.failureReason ?? 'failed',
-          details: 'Operation was previously rejected; fix payload or use a new opId.',
+          details:
+            existing.failureDetails ??
+            'Operation was previously rejected; fix payload or use a new opId.',
         });
         return;
       }
@@ -235,23 +276,22 @@ export class SyncService {
         op.payload as Record<string, unknown>,
       );
       if (!parsed) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+        const invDetails =
+          'Invalid inventory payload: use { inventoryAdjust: { productId, type: IN_ADJUST|OUT_ADJUST, quantity (string) } }';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: invDetails,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details:
-            'Invalid inventory payload: use { inventoryAdjust: { productId, type: IN_ADJUST|OUT_ADJUST, quantity (string) } }',
+          details: invDetails,
         });
         return;
       }
@@ -269,17 +309,15 @@ export class SyncService {
           err instanceof BadRequestException ||
           err instanceof NotFoundException
         ) {
-          await tx.syncOperation.create({
-            data: {
-              opId: op.opId,
-              storeId,
-              deviceId,
-              opType: op.opType,
-              payload: op.payload as Prisma.InputJsonValue,
-              clientTimestamp: clientTs,
-              status: 'failed',
-              failureReason: 'validation_error',
-            },
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
           });
           buckets.failed.push({
             opId: op.opId,
@@ -324,46 +362,44 @@ export class SyncService {
     }
 
     if (op.opType === 'SALE') {
-      const remote = parseSalePayload(op.payload as Record<string, unknown>);
-      if (!remote) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+      const saleParsed = parseSalePayload(op.payload as Record<string, unknown>);
+      if (saleParsed.ok === false) {
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: saleParsed.details,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details:
-            'Invalid sale payload: need sale.storeId, sale.lines[].productId, quantity, price (strings)',
+          details: saleParsed.details,
         });
         return;
       }
 
+      const remote = saleParsed.data;
+
       if (remote.storeId !== storeId) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+        const saleStoreDetails = 'sale.storeId must match X-Store-Id';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: saleStoreDetails,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details: 'sale.storeId must match X-Store-Id',
+          details: saleStoreDetails,
         });
         return;
       }
@@ -398,17 +434,15 @@ export class SyncService {
           err instanceof BadRequestException ||
           err instanceof NotFoundException
         ) {
-          await tx.syncOperation.create({
-            data: {
-              opId: op.opId,
-              storeId,
-              deviceId,
-              opType: op.opType,
-              payload: op.payload as Prisma.InputJsonValue,
-              clientTimestamp: clientTs,
-              status: 'failed',
-              failureReason: 'validation_error',
-            },
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
           });
           buckets.failed.push({
             opId: op.opId,
@@ -434,17 +468,15 @@ export class SyncService {
           err instanceof NotFoundException ||
           err instanceof ConflictException
         ) {
-          await tx.syncOperation.create({
-            data: {
-              opId: op.opId,
-              storeId,
-              deviceId,
-              opType: op.opType,
-              payload: op.payload as Prisma.InputJsonValue,
-              clientTimestamp: clientTs,
-              status: 'failed',
-              failureReason: 'validation_error',
-            },
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
           });
           buckets.failed.push({
             opId: op.opId,
@@ -486,44 +518,42 @@ export class SyncService {
         op.payload as Record<string, unknown>,
       );
       if (!remote) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+        const purchaseParseDetails =
+          'Invalid purchase payload: need purchase.storeId, purchase.supplierId, purchase.lines[].productId, quantity, unitCost (strings)';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: purchaseParseDetails,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details:
-            'Invalid purchase payload: need purchase.storeId, purchase.supplierId, purchase.lines[].productId, quantity, unitCost (strings)',
+          details: purchaseParseDetails,
         });
         return;
       }
 
       if (remote.storeId !== storeId) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+        const purchaseStoreDetails = 'purchase.storeId must match X-Store-Id';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: purchaseStoreDetails,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details: 'purchase.storeId must match X-Store-Id',
+          details: purchaseStoreDetails,
         });
         return;
       }
@@ -558,17 +588,15 @@ export class SyncService {
           err instanceof BadRequestException ||
           err instanceof NotFoundException
         ) {
-          await tx.syncOperation.create({
-            data: {
-              opId: op.opId,
-              storeId,
-              deviceId,
-              opType: op.opType,
-              payload: op.payload as Prisma.InputJsonValue,
-              clientTimestamp: clientTs,
-              status: 'failed',
-              failureReason: 'validation_error',
-            },
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
           });
           buckets.failed.push({
             opId: op.opId,
@@ -592,17 +620,15 @@ export class SyncService {
           err instanceof BadRequestException ||
           err instanceof NotFoundException
         ) {
-          await tx.syncOperation.create({
-            data: {
-              opId: op.opId,
-              storeId,
-              deviceId,
-              opType: op.opType,
-              payload: op.payload as Prisma.InputJsonValue,
-              clientTimestamp: clientTs,
-              status: 'failed',
-              failureReason: 'validation_error',
-            },
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
           });
           buckets.failed.push({
             opId: op.opId,
@@ -644,44 +670,42 @@ export class SyncService {
         op.payload as Record<string, unknown>,
       );
       if (!remote) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+        const srParseDetails =
+          'Invalid saleReturn payload: need saleReturn.storeId, originalSaleId, lines[].saleLineId, quantity (strings)';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: srParseDetails,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details:
-            'Invalid saleReturn payload: need saleReturn.storeId, originalSaleId, lines[].saleLineId, quantity (strings)',
+          details: srParseDetails,
         });
         return;
       }
 
       if (remote.storeId !== storeId) {
-        await tx.syncOperation.create({
-          data: {
-            opId: op.opId,
-            storeId,
-            deviceId,
-            opType: op.opType,
-            payload: op.payload as Prisma.InputJsonValue,
-            clientTimestamp: clientTs,
-            status: 'failed',
-            failureReason: 'validation_error',
-          },
+        const srStoreDetails = 'saleReturn.storeId must match X-Store-Id';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: srStoreDetails,
         });
         buckets.failed.push({
           opId: op.opId,
           reason: 'validation_error',
-          details: 'saleReturn.storeId must match X-Store-Id',
+          details: srStoreDetails,
         });
         return;
       }
@@ -698,17 +722,15 @@ export class SyncService {
           err instanceof BadRequestException ||
           err instanceof NotFoundException
         ) {
-          await tx.syncOperation.create({
-            data: {
-              opId: op.opId,
-              storeId,
-              deviceId,
-              opType: op.opType,
-              payload: op.payload as Prisma.InputJsonValue,
-              clientTimestamp: clientTs,
-              status: 'failed',
-              failureReason: 'validation_error',
-            },
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
           });
           buckets.failed.push({
             opId: op.opId,

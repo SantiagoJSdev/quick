@@ -129,19 +129,19 @@ Es un archivo **colección de Postman** (formato JSON Collection v2.1). **No lo 
 
 Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o columna `id` en `Store` en Prisma Studio). Para **`sync/push`**, si repites el mismo `opId` que ya se aplicó, la API responderá `skipped`: usa un UUID nuevo por operación de prueba o borra la fila en `SyncOperation` si quieres repetir el mismo id.
 
-**`GET /api/v1/sync/pull`**: el POS baja cambios del servidor (catálogo) con `?since=<ultima_version_pull>&limit=500`. Esa versión es la de **`ServerChangeLog`**, no la misma que `acked[].serverVersion` de `sync/push` (ver `docs/api/SYNC_CONTRACTS.md`).
+**`GET /api/v1/sync/pull`**: el POS baja cambios del servidor (catálogo) con `?since=<ultima_version_pull>&limit=500`. Esa versión es la de **`ServerChangeLog`**, no la misma que `acked[].serverVersion` de `sync/push` (contrato offline: `docs/FRONT_OFFLINE_EXECUTION_PLAN_V2.md`, `docs/MASTER_CONTEXT.md`).
 
 **Inventario**: `GET /api/v1/inventory`, `GET .../movements`, `POST .../adjustments` (ajuste `IN_ADJUST`/`OUT_ADJUST`); ver Swagger y `docs/FRONTEND_INTEGRATION_CONTEXT.md`.
 
-**Ventas**: `POST /api/v1/sales`, `GET /api/v1/sales/:id`; `sync/push` con `opType: SALE` (misma lógica de negocio en transacción); ver Swagger y `SYNC_CONTRACTS.md`.
+**Ventas**: `POST /api/v1/sales`, `GET /api/v1/sales/:id`; `sync/push` con `opType: SALE` (misma lógica de negocio en transacción); contrato offline **`docs/api/SYNC_PUSH_SALE.md`** (líneas `quantity`/`price` como strings JSON); ver también Swagger y `docs/MASTER_CONTEXT.md`.
 
-**Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno.
+**Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno. Contrato detallado (incl. `supplierInvoiceReference`): **`docs/api/PURCHASES.md`**.
 
-**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`. **Auth:** `OPS_API_KEY` / `OPS_IP_ALLOWLIST` (ver arriba).
+**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState` + **`failedSamples`** para correlacionar ops fallidas con el POS por `opId`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`. **Auth:** `OPS_API_KEY` / `OPS_IP_ALLOWLIST` (ver arriba). Referencia: **`docs/api/OPS_METRICS.md`**.
 
 **Pruebas de integración (M6 parcial):** `npm run test:integration` (`RUN_INTEGRATION=1`) — requiere DB sembrada (`npm run db:seed`). Cubre outbox al crear producto, sync `NOOP`/pull, **FX inmutable en ventas** y **SALE** en sync con el mismo `opId`.
 
-**Devoluciones (M6)**: `POST /api/v1/sale-returns`, `GET /api/v1/sale-returns/:id`; `sync/push` `SALE_RETURN`. Política y límites: `docs/api/RETURNS_POLICY.md`.
+**Devoluciones (M6)**: `POST /api/v1/sale-returns`, `GET /api/v1/sale-returns/:id`; `sync/push` `SALE_RETURN`. Política: Swagger `/api/docs` y `docs/MASTER_CONTEXT.md`.
 
 **App Flutter / Android:** contrato front `docs/FRONTEND_INTEGRATION_CONTEXT.md`; guía Android Studio + Gemini `docs/flutter/IMPLEMENTACION_FLUTTER_ANDROID_GEMINI.md`; índice de documentos a copiar `docs/flutter/DOCUMENTOS_A_COPIAR_AL_PROYECTO_FLUTTER.md`.
 

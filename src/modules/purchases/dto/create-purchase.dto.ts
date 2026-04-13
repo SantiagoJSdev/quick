@@ -53,6 +53,16 @@ export class CreatePurchaseDto {
   @MaxLength(10)
   documentCurrencyCode?: string;
 
+  @ApiPropertyOptional({
+    example: 'FAC-2026-0042',
+    description:
+      'Referencia del documento del proveedor (factura, guía, nota de recepción, etc.).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  supplierInvoiceReference?: string;
+
   @ApiProperty({ type: [CreatePurchaseLineDto] })
   @IsArray()
   @ArrayMinSize(1)
