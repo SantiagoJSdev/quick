@@ -11,6 +11,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
+import { ApiQuery } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { CreateProductDto } from './dto/create-product.dto';
 import {
@@ -74,12 +75,24 @@ export class ProductsController {
   }
 
   @Patch(':id')
+  @ApiQuery({
+    name: 'syncListPriceFromMargin',
+    required: false,
+    description:
+      'Si es `1` o `true`, misma semántica que `applySuggestedListPrice: true` en el body (persistir `price` desde margen M7).',
+  })
   update(
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
+    @Query('syncListPriceFromMargin') syncListPriceFromMargin: string | undefined,
     @Req() req: Request,
   ) {
-    return this.productsService.update(id, dto, this.storeContext(req));
+    const fromQuery =
+      syncListPriceFromMargin === '1' ||
+      syncListPriceFromMargin === 'true';
+    return this.productsService.update(id, dto, this.storeContext(req), {
+      syncListPriceFromMargin: fromQuery,
+    });
   }
 
   @Delete(':id')

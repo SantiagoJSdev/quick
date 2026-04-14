@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsEnum,
@@ -83,5 +84,13 @@ export class UpdateProductDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Si es true: tras aplicar el resto del body, persiste `price` igual al `suggestedPrice` M7 (mismo cálculo que en la respuesta), salvo `MANUAL_PRICE` o costo/margen que no permitan sugerido — en ese caso el flag se ignora. No combinar con `price` en el mismo request.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  applySuggestedListPrice?: boolean;
 }
 

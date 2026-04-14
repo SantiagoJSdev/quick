@@ -464,10 +464,18 @@ export class ProductsService {
     };
   }
 
-  async update(id: string, dto: UpdateProductDto, ctx: ProductStoreContext) {
-    await this.findProductByIdOrThrow(id);
-
+  async update(
+    id: string,
+    dto: UpdateProductDto,
+    ctx: ProductStoreContext,
+    opts?: { syncListPriceFromMargin?: boolean },
+  ) {
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.product.findUnique({ where: { id } });
+      if (!existing) {
+        throw new NotFoundException('Product not found');
+      }
+
       const {
         price,
         cost,
@@ -475,12 +483,31 @@ export class ProductsService {
         barcode,
         image,
         marginPercentOverride,
+        applySuggestedListPrice,
         ...rest
       } = dto;
+
+      const wantApply =
+        applySuggestedListPrice === true || opts?.syncListPriceFromMargin === true;
+
+      if (wantApply && price !== undefined) {
+        throw new BadRequestException(
+          'Do not send price when applySuggestedListPrice is true or when using syncListPriceFromMargin query',
+        );
+      }
+
       const marginParsed = this.parseMarginPercentOverride(
         marginPercentOverride,
         'update',
       );
+
+      const nextCost = cost !== undefined ? this.toDecimal(cost) : existing.cost;
+      const nextPricingMode = dto.pricingMode ?? existing.pricingMode;
+      const nextMarginOverride =
+        marginParsed !== undefined
+          ? marginParsed
+          : existing.marginPercentOverride;
+
       // `as ProductUpdateInput`: needed if `prisma generate` did not refresh types (e.g. EPERM locking query_engine DLL on Windows).
       const data = {
         ...rest,
@@ -496,9 +523,36 @@ export class ProductsService {
           : {}),
       } as Prisma.ProductUpdateInput;
 
+      if (wantApply) {
+        const { suggestedPrice } = computeProductMarginDerivatives(
+          {
+            pricingMode: nextPricingMode,
+            marginPercentOverride: nextMarginOverride,
+            cost: nextCost,
+            price: existing.price,
+          },
+          { defaultMarginPercent: ctx.settings.defaultMarginPercent },
+        );
+        if (suggestedPrice != null) {
+          data.price = this.toDecimal(suggestedPrice);
+        }
+      }
+
+      const cleaned = Object.fromEntries(
+        Object.entries(data as Record<string, unknown>).filter(
+          ([, v]) => v !== undefined,
+        ),
+      ) as Prisma.ProductUpdateInput;
+
+      if (Object.keys(cleaned).length === 0) {
+        throw new BadRequestException(
+          'No product fields to update. If you used applySuggestedListPrice or syncListPriceFromMargin, the product may be MANUAL_PRICE, have zero cost, or lack an effective margin.',
+        );
+      }
+
       const product = await tx.product.update({
         where: { id },
-        data,
+        data: cleaned,
         include: productOutboxInclude,
       });
 
