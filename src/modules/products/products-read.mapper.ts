@@ -2,6 +2,7 @@
 export interface MongoProductReadDoc {
   _id: string;
   productId?: string;
+  catalogStoreId?: string | null;
   sku?: string;
   barcode?: string | null;
   name?: string;

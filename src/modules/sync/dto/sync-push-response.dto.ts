@@ -1,4 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class SyncAckedSupplierDto {
+  @ApiPropertyOptional({
+    description:
+      'Solo en `SUPPLIER_CREATE`: id provisional del cliente (UUID v4) mapeado a `supplierId` del servidor.',
+  })
+  clientSupplierId?: string;
+
+  @ApiProperty({ description: 'Id definitivo del proveedor en servidor' })
+  supplierId!: string;
+}
 
 export class SyncAckedItemDto {
   @ApiProperty()
@@ -6,6 +17,13 @@ export class SyncAckedItemDto {
 
   @ApiProperty()
   serverVersion!: number;
+
+  @ApiPropertyOptional({
+    type: SyncAckedSupplierDto,
+    description:
+      'Presente en ack de `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, `SUPPLIER_DEACTIVATE`.',
+  })
+  supplier?: SyncAckedSupplierDto;
 }
 
 export class SyncSkippedItemDto {

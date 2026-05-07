@@ -135,6 +135,10 @@ model Product {
   /// % de margen sobre costo cuando `pricingMode` = USE_PRODUCT_OVERRIDE; ignorado en otros modos salvo futuras reglas de sugerencia.
   marginPercentOverride  Decimal?           @db.Decimal(10, 4)
 
+  /// Tienda propietaria del ítem de catálogo (POS “en blanco”: solo ve productos de su tienda o legado con stock en esa tienda).
+  catalogStoreId String?
+  catalogStore   Store?     @relation("StoreCatalogProducts", fields: [catalogStoreId], references: [id], onDelete: Restrict)
+
   inventoryItems InventoryItem[]
   movements      StockMovement[]
   saleLines      SaleLine[]
@@ -147,6 +151,7 @@ model Product {
 
   @@index([name])
   @@index([categoryId])
+  @@index([catalogStoreId])
 }
 
 model Category {
@@ -297,6 +302,7 @@ model Store {
   timezone       String?
   metadata       Json?
 
+  catalogProducts Product[]      @relation("StoreCatalogProducts")
   inventory      InventoryItem[]
   stockMovements StockMovement[]
   purchases      Purchase[]

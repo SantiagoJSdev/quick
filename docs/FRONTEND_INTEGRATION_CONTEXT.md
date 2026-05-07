@@ -96,7 +96,7 @@ Este documento sirve para:
 
 - Operaciones definitivas van por `sync/push`.
 - `held tickets` no son `SALE` ni van a `sync/push` hasta cobrar.
-- Pull invalida catalogo y refresca pantallas.
+- Pull invalida catalogo (incluye deltas de proveedor vía `SUPPLIER_*` en pull) y refresca pantallas; conviene también refrescar lista local de proveedores con `GET /suppliers` tras push/pull si la UI depende de ese catálogo.
 
 ## 6) Endpoints clave (minimo operativo)
 
@@ -167,6 +167,41 @@ Notas de contrato vigentes para ventas:
 - **`fxSnapshot`** opcional; misma forma que en sync (puede incluir `fxSource`).
 - **`GET /purchases/:id`**: respuesta incluye `supplierInvoiceReference` opcional.
 - Sync `payload.purchase`: mismos conceptos; preferido **`supplierInvoiceReference`**; alias **`reference`** solo en sync (si vienen ambos, gana `supplierInvoiceReference`). Alias **`fx`** = mismo contenido que `fxSnapshot`.
+- En **`PURCHASE_RECEIVE`**, `purchase.supplierId` puede ser el **UUID provisional** (`clientSupplierId`) definido en un **`SUPPLIER_CREATE` anterior dentro del mismo batch**; el servidor lo resuelve al id real antes de aplicar la compra. Entre batches distintos el cliente debe usar ya el **`supplierId` del servidor** (viene en `acked[].supplier` del create) o reescribir la cola local tras ese ack.
+
+### Sync `POST /sync/push` — proveedores (`SUPPLIER_*`)
+
+**Contrato JSON completo (request/response, pull, ejemplos):** [`docs/api/SYNC_PUSH_SUPPLIERS.md`](./api/SYNC_PUSH_SUPPLIERS.md).
+
+Contrato resumido para alta / edición / baja soft offline, mismo batch que ventas y compras.
+
+**`opType` (strings exactas):** `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, `SUPPLIER_DEACTIVATE`.
+
+**Cada op:** `opId` (UUID v4), `opType`, `timestamp` (ISO-8601), `payload` objeto.
+
+**Payloads (todos usan `payload.supplier` como objeto):**
+
+| `opType` | Campos obligatorios | Opcionales (mismos límites que REST `POST/PATCH /suppliers`) |
+|----------|---------------------|---------------------------------------------------------------|
+| `SUPPLIER_CREATE` | `clientSupplierId` (UUID v4, id provisional del dispositivo), `name` (1–200 tras trim) | `phone` (≤80), `email` (válido, ≤200), `address` (≤500), `taxId` (≤80), `notes` (≤2000) |
+| `SUPPLIER_UPDATE` | `supplierId` (UUID v4; puede ser provisional si ya hubo `SUPPLIER_CREATE` **antes** en el mismo batch) | Al menos uno de: `name`, `phone`, `email`, `address`, `taxId`, `notes`, `boolean` `active` |
+| `SUPPLIER_DEACTIVATE` | `supplierId` (UUID v4; resolución provisional igual que arriba) | — |
+
+**Respuesta `acked[]`:** además de `opId` y `serverVersion`, si aplica **`supplier`**: `{ "supplierId": "<uuid servidor>" }`; en **`SUPPLIER_CREATE`** también **`clientSupplierId`** (el provisional enviado) para mapeo en el cliente.
+
+**Errores por operación (HTTP 200 en el batch):** entradas en **`failed[]`** con `reason` y `details` (texto). Validación de payload / negocio: típicamente **`reason`: `validation_error`**. Misma línea que `SALE` / `PURCHASE_RECEIVE`: **`validation_error`** → revisar payload o datos; reintentar con el mismo `opId` solo si el fallo fue transitorio y **no** quedó registrado como failed en servidor; si quedó **failed** persistido, nueva **`opId`**.
+
+**Idempotencia (`opId`):** igual que el resto del sync: misma `opId` + mismo `payload` → `skipped` `already_applied`; misma `opId` + **distinto** `payload` → **`failed`** `payload_mismatch` (no se aplica la segunda versión). `opId` duplicado en **otra tienda** → **409** en todo el request (transacción abortada).
+
+**Orden:** el servidor aplica **`ops[]` en el orden del array** (transacción serializable). El campo **`timestamp` no reordena** el batch; debe servir solo para auditoría / depuración. Depende del cliente enviar el orden correcto (ej. `SUPPLIER_CREATE` antes de `PURCHASE_RECEIVE` que use el provisional).
+
+**Límite:** máximo **200** operaciones por request (`ops.length`); sin cambio.
+
+**Dependencias:** `PURCHASE_RECEIVE` con `supplierId` desconocido en BD falla salvo que ese valor sea un **provisional ya mapeado** por un `SUPPLIER_CREATE` previo **en el mismo batch**. Dos `SUPPLIER_CREATE` con el mismo `clientSupplierId` en un batch → `validation_error`.
+
+**Coherencia con REST:** mismas reglas de negocio que `POST /suppliers`, `PATCH /suppliers/:id`, `DELETE /suppliers/:id` (baja soft). No hay unicidad global de `taxId` en esquema actual. Compra con proveedor inactivo → error de negocio (mismo mensaje vía sync que en REST). Si otro dispositivo desactivó al proveedor, un `SUPPLIER_UPDATE` con `active: true` puede reactivarlo; un `PURCHASE_RECEIVE` contra proveedor inactivo sigue fallando hasta reactivar o cambiar proveedor.
+
+**Pull (`GET /sync/pull`):** tras mutaciones de proveedor, el servidor emite entradas con **`opType`** `SUPPLIER_CREATED`, `SUPPLIER_UPDATED`, `SUPPLIER_DEACTIVATED` (nombres en pasado, alineados a `PRODUCT_*`). Payload: `{ "supplierId", "fields": { ... } }` con strings ISO para fechas y demás campos alineados al modelo proveedor. Alcance **`storeScopeId`** = tienda: solo los dispositivos de esa tienda reciben esos deltas en pull.
 
 ### Sync `POST /sync/push` — ventas `SALE`
 
@@ -270,6 +305,8 @@ Ejecutar este bloque en Android fisico para validar comportamiento base:
 
 ## 13) Bitacora de cambios recientes
 
+- 2026-04-14:
+  - `sync/push`: nuevos `opType` `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, `SUPPLIER_DEACTIVATE` con `payload.supplier`, id provisional `clientSupplierId`, ack `supplier` con id servidor; resolución de provisional en el mismo batch para `PURCHASE_RECEIVE` y updates/deactivate; pull emite `SUPPLIER_CREATED` / `UPDATED` / `DEACTIVATED` por tienda.
 - 2026-04-13:
   - `PATCH /products/:id`: opcional `applySuggestedListPrice` y query `syncListPriceFromMargin` para persistir `price` desde el cálculo M7 en un solo request (ver seccion M7 arriba).
 - 2026-04-07:

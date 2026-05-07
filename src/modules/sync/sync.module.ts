@@ -5,6 +5,7 @@ import { PosDeviceModule } from '../pos-device/pos-device.module';
 import { PurchasesModule } from '../purchases/purchases.module';
 import { SaleReturnsModule } from '../sale-returns/sale-returns.module';
 import { SalesModule } from '../sales/sales.module';
+import { SuppliersModule } from '../suppliers/suppliers.module';
 import { SyncController } from './sync.controller';
 import { SyncService } from './sync.service';
 
@@ -16,6 +17,7 @@ import { SyncService } from './sync.service';
     SalesModule,
     PurchasesModule,
     SaleReturnsModule,
+    SuppliersModule,
   ],
   controllers: [SyncController],
   providers: [SyncService],

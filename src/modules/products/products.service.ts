@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -62,7 +63,7 @@ export class ProductsService {
 
   async create(dto: CreateProductDto, ctx: ProductStoreContext) {
     const product = await this.prisma.$transaction((tx) =>
-      this.persistProductCreatedTx(tx, dto),
+      this.persistProductCreatedTx(tx, dto, ctx.storeId),
     );
     return this.attachMarginDerivatives(product, ctx.settings);
   }
@@ -123,6 +124,7 @@ export class ProductsService {
             const productRow = await this.persistProductCreatedTx(
               tx,
               productDto,
+              ctx.storeId,
             );
             await this.inventory.applyAdjustTx(tx, ctx.storeId, {
               productId: productRow.id,
@@ -208,6 +210,7 @@ export class ProductsService {
   private async persistProductCreatedTx(
     tx: Prisma.TransactionClient,
     dto: CreateProductDto,
+    catalogStoreId: string,
   ): Promise<ProductForOutbox> {
     const skuFinal = await this.resolveCreateSku(tx, dto.sku);
     const barcodeVal = this.normalizeBarcodeInput(dto.barcode);
@@ -231,6 +234,7 @@ export class ProductsService {
         ...rest,
         sku: skuFinal,
         barcode: barcodeVal,
+        catalogStoreId,
         price: this.toDecimal(price),
         cost: this.toDecimal(cost),
         ...(marginParsed !== undefined
@@ -253,10 +257,66 @@ export class ProductsService {
       data: {
         opType: 'PRODUCT_CREATED',
         payload: productSyncPullPayload(product) as Prisma.InputJsonValue,
-        storeScopeId: null,
+        storeScopeId: catalogStoreId,
       },
     });
 
+    return product;
+  }
+
+  /** Catálogo visible para una tienda: propios (`catalogStoreId`) o legado compartido con línea de inventario en esa tienda. */
+  private catalogWhere(
+    includeInactive: boolean,
+    storeId: string,
+  ): Prisma.ProductWhereInput {
+    return {
+      AND: [
+        includeInactive ? {} : { active: true },
+        {
+          OR: [
+            { catalogStoreId: storeId },
+            {
+              AND: [
+                { catalogStoreId: null },
+                { inventoryItems: { some: { storeId } } },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private assertProductWriteAccess(
+    product: { catalogStoreId: string | null },
+    storeId: string,
+  ) {
+    if (
+      product.catalogStoreId != null &&
+      product.catalogStoreId !== storeId
+    ) {
+      throw new ForbiddenException('Product belongs to another store');
+    }
+  }
+
+  private async assertProductInStoreCatalog(id: string, storeId: string) {
+    const product = await this.prisma.product.findFirst({
+      where: {
+        id,
+        OR: [
+          { catalogStoreId: storeId },
+          {
+            AND: [
+              { catalogStoreId: null },
+              { inventoryItems: { some: { storeId } } },
+            ],
+          },
+        ],
+      },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
     return product;
   }
 
@@ -272,25 +332,25 @@ export class ProductsService {
     const { settings } = ctx;
     if (source === 'postgres') {
       return {
-        data: await this.findAllPostgres(includeInactive, settings),
+        data: await this.findAllPostgres(includeInactive, ctx),
         readSource: 'postgres',
       };
     }
     if (source === 'mongo') {
       return {
-        data: await this.findAllMongoOrThrow(includeInactive, settings),
+        data: await this.findAllMongoOrThrow(includeInactive, ctx),
         readSource: 'mongo',
       };
     }
     const client = this.mongo.getClient();
     if (!client) {
       return {
-        data: await this.findAllPostgres(includeInactive, settings),
+        data: await this.findAllPostgres(includeInactive, ctx),
         readSource: 'postgres',
       };
     }
     try {
-      const data = await this.findAllMongo(includeInactive, client, settings);
+      const data = await this.findAllMongo(includeInactive, client, ctx);
       return { data, readSource: 'mongo' };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -298,7 +358,7 @@ export class ProductsService {
         `Catalog list: Mongo failed (${message}) — falling back to Postgres`,
       );
       return {
-        data: await this.findAllPostgres(includeInactive, settings),
+        data: await this.findAllPostgres(includeInactive, ctx),
         readSource: 'postgres',
       };
     }
@@ -313,11 +373,11 @@ export class ProductsService {
     source: ProductReadSource = 'auto',
     ctx: ProductStoreContext,
   ): Promise<{ data: unknown; readSource: 'mongo' | 'postgres' }> {
-    const { settings } = ctx;
+    const { settings, storeId } = ctx;
     if (source === 'postgres') {
       return {
         data: this.attachMarginDerivatives(
-          await this.findProductByIdOrThrow(id),
+          await this.assertProductInStoreCatalog(id, storeId),
           settings,
         ),
         readSource: 'postgres',
@@ -328,6 +388,7 @@ export class ProductsService {
       if (!doc) {
         throw new NotFoundException('Product not found');
       }
+      await this.assertProductInStoreCatalog(id, storeId);
       return {
         data: this.attachMarginDerivatives(
           mongoProductReadToApiShape(doc),
@@ -340,7 +401,7 @@ export class ProductsService {
     if (!client) {
       return {
         data: this.attachMarginDerivatives(
-          await this.findProductByIdOrThrow(id),
+          await this.assertProductInStoreCatalog(id, storeId),
           settings,
         ),
         readSource: 'postgres',
@@ -349,6 +410,7 @@ export class ProductsService {
     try {
       const doc = await this.findOneMongo(id, client);
       if (doc) {
+        await this.assertProductInStoreCatalog(id, storeId);
         return {
           data: this.attachMarginDerivatives(
             mongoProductReadToApiShape(doc),
@@ -365,7 +427,7 @@ export class ProductsService {
     }
     return {
       data: this.attachMarginDerivatives(
-        await this.findProductByIdOrThrow(id),
+        await this.assertProductInStoreCatalog(id, storeId),
         settings,
       ),
       readSource: 'postgres',
@@ -378,36 +440,51 @@ export class ProductsService {
 
   private async findAllPostgres(
     includeInactive: boolean,
-    settings: BusinessSettings,
+    ctx: ProductStoreContext,
   ) {
     const rows = await this.prisma.product.findMany({
-      where: includeInactive ? {} : { active: true },
+      where: this.catalogWhere(includeInactive, ctx.storeId),
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map((p) => this.attachMarginDerivatives(p, settings));
+    return rows.map((p) => this.attachMarginDerivatives(p, ctx.settings));
   }
 
   private async findAllMongo(
     includeInactive: boolean,
     client: NonNullable<ReturnType<MongoService['getClient']>>,
-    settings: BusinessSettings,
+    ctx: ProductStoreContext,
   ) {
+    const rows = await this.prisma.product.findMany({
+      where: this.catalogWhere(includeInactive, ctx.storeId),
+      orderBy: { createdAt: 'desc' },
+    });
+    if (rows.length === 0) {
+      return [];
+    }
     const coll = client
       .db(this.dbName())
       .collection<MongoProductReadDoc>('products_read');
-    const filter = includeInactive ? {} : { active: true };
-    const docs = await coll
-      .find(filter)
-      .sort({ 'pg.updatedAt': -1 })
-      .toArray();
-    return docs.map((d) =>
-      this.attachMarginDerivatives(mongoProductReadToApiShape(d), settings),
+    const ids = rows.map((r) => r.id);
+    const docs = await coll.find({ _id: { $in: ids } }).toArray();
+    const byId = new Map(
+      docs.map((d) => [d._id as string, d] as const),
     );
+    const { settings } = ctx;
+    return rows.map((pgRow) => {
+      const doc = byId.get(pgRow.id);
+      if (doc) {
+        return this.attachMarginDerivatives(
+          mongoProductReadToApiShape(doc),
+          settings,
+        );
+      }
+      return this.attachMarginDerivatives(pgRow as object, settings);
+    });
   }
 
   private async findAllMongoOrThrow(
     includeInactive: boolean,
-    settings: BusinessSettings,
+    ctx: ProductStoreContext,
   ) {
     const client = this.mongo.getClient();
     if (!client) {
@@ -415,7 +492,7 @@ export class ProductsService {
         'MongoDB read model is not configured or unavailable',
       );
     }
-    return this.findAllMongo(includeInactive, client, settings);
+    return this.findAllMongo(includeInactive, client, ctx);
   }
 
   private async findOneMongo(
@@ -436,14 +513,6 @@ export class ProductsService {
       );
     }
     return this.findOneMongo(id, client);
-  }
-
-  private async findProductByIdOrThrow(id: string) {
-    const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
-    return product;
   }
 
   private attachMarginDerivatives<T extends object>(
@@ -475,6 +544,7 @@ export class ProductsService {
       if (!existing) {
         throw new NotFoundException('Product not found');
       }
+      this.assertProductWriteAccess(existing, ctx.storeId);
 
       const {
         price,
@@ -569,7 +639,7 @@ export class ProductsService {
         data: {
           opType: 'PRODUCT_UPDATED',
           payload: productSyncPullPayload(product) as Prisma.InputJsonValue,
-          storeScopeId: null,
+          storeScopeId: product.catalogStoreId,
         },
       });
 
@@ -578,7 +648,11 @@ export class ProductsService {
   }
 
   async remove(id: string, ctx: ProductStoreContext) {
-    const existing = await this.findProductByIdOrThrow(id);
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Product not found');
+    }
+    this.assertProductWriteAccess(existing, ctx.storeId);
     if (!existing.active) {
       return this.attachMarginDerivatives(existing, ctx.settings);
     }
@@ -603,7 +677,7 @@ export class ProductsService {
         data: {
           opType: 'PRODUCT_DEACTIVATED',
           payload: productSyncPullPayload(product) as Prisma.InputJsonValue,
-          storeScopeId: null,
+          storeScopeId: product.catalogStoreId,
         },
       });
 

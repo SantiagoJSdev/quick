@@ -6,6 +6,7 @@ import { PosDeviceService } from '../pos-device/pos-device.service';
 import { PurchasesService } from '../purchases/purchases.service';
 import { SaleReturnsService } from '../sale-returns/sale-returns.service';
 import { SalesService } from '../sales/sales.service';
+import { SuppliersService } from '../suppliers/suppliers.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncService } from './sync.service';
 
@@ -32,6 +33,7 @@ const run = process.env.RUN_INTEGRATION === '1';
       inventory,
       storeFx,
     );
+    const suppliers = new SuppliersService(prisma);
     service = new SyncService(
       prisma,
       inventory,
@@ -40,6 +42,7 @@ const run = process.env.RUN_INTEGRATION === '1';
       saleReturns,
       storeFx,
       posDevice,
+      suppliers,
     );
 
     const store = await prisma.store.findFirst({

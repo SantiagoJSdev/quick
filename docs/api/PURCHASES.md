@@ -53,7 +53,7 @@ Misma lógica de negocio que `POST /purchases`, dentro del batch de sync. Requie
 | Campo | Obligatorio | Notas |
 |-------|-------------|--------|
 | `storeId` | Sí | Debe coincidir con `X-Store-Id`. |
-| `supplierId` | Sí | |
+| `supplierId` | Sí | UUID del proveedor en servidor, o **en `sync/push` únicamente** el UUID provisional (`clientSupplierId`) si en el **mismo batch** un `SUPPLIER_CREATE` previo ya creó ese mapeo. |
 | `lines` | Sí | Misma forma que REST (`productId`, `quantity`, `unitCost` como strings). |
 | `documentCurrencyCode` | No | |
 | **`supplierInvoiceReference`** | No | Preferido. |

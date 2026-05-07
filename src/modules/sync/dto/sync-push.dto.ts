@@ -18,6 +18,9 @@ const SYNC_PUSH_OP_TYPES = [
   'SALE_RETURN',
   'PURCHASE_RECEIVE',
   'INVENTORY_ADJUST',
+  'SUPPLIER_CREATE',
+  'SUPPLIER_UPDATE',
+  'SUPPLIER_DEACTIVATE',
   'NOOP',
 ] as const;
 export type SyncPushOpType = (typeof SYNC_PUSH_OP_TYPES)[number];

@@ -6,6 +6,7 @@ describe('buildProductOutboxPayload', () => {
   it('includes stable fields expected by OutboxMongoWorker', () => {
     const product = {
       id: 'p1',
+      catalogStoreId: null,
       sku: 'SKU1',
       barcode: null,
       name: 'N',
@@ -26,9 +27,15 @@ describe('buildProductOutboxPayload', () => {
     } as unknown as ProductForOutbox;
 
     const payload = buildProductOutboxPayload(product) as {
-      product: { id: string; price: string; category: { id: string; name: string } };
+      product: {
+        id: string;
+        catalogStoreId: string | null;
+        price: string;
+        category: { id: string; name: string };
+      };
     };
     expect(payload.product.id).toBe('p1');
+    expect(payload.product.catalogStoreId).toBeNull();
     expect(payload.product.price).toBe('10.00');
     expect(payload.product.category).toEqual({ id: 'c1', name: 'Cat' });
   });

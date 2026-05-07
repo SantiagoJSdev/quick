@@ -244,6 +244,7 @@ export class OutboxMongoWorker implements OnModuleInit, OnModuleDestroy {
     return {
       _id: id,
       productId: id,
+      catalogStoreId: p.catalogStoreId ?? null,
       sku: p.sku,
       barcode: p.barcode ?? null,
       name: p.name,

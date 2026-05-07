@@ -14,6 +14,13 @@ import { parseSaleReturnPayload } from '../sale-returns/sale-return-sync-payload
 import { SaleReturnsService } from '../sale-returns/sale-returns.service';
 import { parseSalePayload } from '../sales/sale-sync-payload';
 import { SalesService } from '../sales/sales.service';
+import { supplierSyncPullPayload } from '../suppliers/supplier-pull-payload';
+import {
+  parseSupplierCreatePayload,
+  parseSupplierDeactivatePayload,
+  parseSupplierUpdatePayload,
+} from '../suppliers/supplier-sync-payload';
+import { SuppliersService } from '../suppliers/suppliers.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -21,9 +28,18 @@ import { PosDeviceService } from '../pos-device/pos-device.service';
 import type { SyncPushDto, SyncPushOpDto } from './dto/sync-push.dto';
 import { stableJsonStringify } from './stable-json';
 
+export type SyncPushAckedSupplier = {
+  clientSupplierId?: string;
+  supplierId: string;
+};
+
 export type SyncPushResult = {
   serverTime: string;
-  acked: { opId: string; serverVersion: number }[];
+  acked: {
+    opId: string;
+    serverVersion: number;
+    supplier?: SyncPushAckedSupplier;
+  }[];
   skipped: { opId: string; reason: string }[];
   failed: { opId: string; reason: string; details?: string }[];
 };
@@ -92,6 +108,7 @@ export class SyncService {
     private readonly saleReturns: SaleReturnsService,
     private readonly storeFx: StoreFxSnapshotService,
     private readonly posDevice: PosDeviceService,
+    private readonly suppliers: SuppliersService,
   ) {}
 
   /**
@@ -162,12 +179,14 @@ export class SyncService {
           update: {},
         });
 
+        const clientSupplierMap = new Map<string, string>();
+
         for (const op of dto.ops) {
           await this.processOneOp(tx, storeId, dto.deviceId, op, {
             acked,
             skipped,
             failed,
-          });
+          }, clientSupplierMap);
         }
       },
       {
@@ -190,6 +209,8 @@ export class SyncService {
       skipped: SyncPushResult['skipped'];
       failed: SyncPushResult['failed'];
     },
+    /** `clientSupplierId` (provisional) → id servidor, solo dentro de este batch. */
+    clientSupplierMap: Map<string, string>,
   ) {
     const existing = await tx.syncOperation.findUnique({
       where: { opId: op.opId },
@@ -358,6 +379,316 @@ export class SyncService {
       });
 
       buckets.acked.push({ opId: op.opId, serverVersion });
+      return;
+    }
+
+    if (op.opType === 'SUPPLIER_CREATE') {
+      const parsed = parseSupplierCreatePayload(
+        op.payload as Record<string, unknown>,
+      );
+      if (parsed.ok === false) {
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: parsed.details,
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: parsed.details,
+        });
+        return;
+      }
+
+      if (clientSupplierMap.has(parsed.clientSupplierId)) {
+        const dupDetails =
+          'Duplicate supplier.clientSupplierId in the same batch (each provisional id must be unique within ops[])';
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: dupDetails,
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: dupDetails,
+        });
+        return;
+      }
+
+      let created: Awaited<
+        ReturnType<SuppliersService['createSupplierTx']>
+      >;
+      try {
+        created = await this.suppliers.createSupplierTx(
+          tx,
+          storeId,
+          parsed.dto,
+        );
+        clientSupplierMap.set(parsed.clientSupplierId, created.id);
+        await tx.serverChangeLog.create({
+          data: {
+            opType: 'SUPPLIER_CREATED',
+            payload: supplierSyncPullPayload(created) as Prisma.InputJsonValue,
+            storeScopeId: storeId,
+          },
+        });
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
+
+      await tx.syncOperation.create({
+        data: {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
+        },
+      });
+
+      buckets.acked.push({
+        opId: op.opId,
+        serverVersion,
+        supplier: {
+          clientSupplierId: parsed.clientSupplierId,
+          supplierId: created.id,
+        },
+      });
+      return;
+    }
+
+    if (op.opType === 'SUPPLIER_UPDATE') {
+      const parsed = parseSupplierUpdatePayload(
+        op.payload as Record<string, unknown>,
+      );
+      if (parsed.ok === false) {
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: parsed.details,
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: parsed.details,
+        });
+        return;
+      }
+
+      const resolvedSupplierId =
+        clientSupplierMap.get(parsed.supplierId) ?? parsed.supplierId;
+
+      let updated: Awaited<
+        ReturnType<SuppliersService['updateSupplierTx']>
+      >;
+      try {
+        updated = await this.suppliers.updateSupplierTx(
+          tx,
+          storeId,
+          resolvedSupplierId,
+          parsed.dto,
+        );
+        await tx.serverChangeLog.create({
+          data: {
+            opType: 'SUPPLIER_UPDATED',
+            payload: supplierSyncPullPayload(updated) as Prisma.InputJsonValue,
+            storeScopeId: storeId,
+          },
+        });
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
+
+      await tx.syncOperation.create({
+        data: {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
+        },
+      });
+
+      buckets.acked.push({
+        opId: op.opId,
+        serverVersion,
+        supplier: { supplierId: updated.id },
+      });
+      return;
+    }
+
+    if (op.opType === 'SUPPLIER_DEACTIVATE') {
+      const parsed = parseSupplierDeactivatePayload(
+        op.payload as Record<string, unknown>,
+      );
+      if (parsed.ok === false) {
+        await this.recordFailedSyncOp(tx, {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          failureReason: 'validation_error',
+          failureDetails: parsed.details,
+        });
+        buckets.failed.push({
+          opId: op.opId,
+          reason: 'validation_error',
+          details: parsed.details,
+        });
+        return;
+      }
+
+      const resolvedSupplierId =
+        clientSupplierMap.get(parsed.supplierId) ?? parsed.supplierId;
+
+      let deactivated: Awaited<
+        ReturnType<SuppliersService['softDeleteSupplierTx']>
+      >;
+      try {
+        deactivated = await this.suppliers.softDeleteSupplierTx(
+          tx,
+          storeId,
+          resolvedSupplierId,
+        );
+        await tx.serverChangeLog.create({
+          data: {
+            opType: 'SUPPLIER_DEACTIVATED',
+            payload: supplierSyncPullPayload(
+              deactivated,
+            ) as Prisma.InputJsonValue,
+            storeScopeId: storeId,
+          },
+        });
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+        ) {
+          await this.recordFailedSyncOp(tx, {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            failureReason: 'validation_error',
+            failureDetails: err.message,
+          });
+          buckets.failed.push({
+            opId: op.opId,
+            reason: 'validation_error',
+            details: err.message,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const { serverVersion } = await tx.storeSyncState.update({
+        where: { storeId },
+        data: { serverVersion: { increment: 1 } },
+        select: { serverVersion: true },
+      });
+
+      await tx.syncOperation.create({
+        data: {
+          opId: op.opId,
+          storeId,
+          deviceId,
+          opType: op.opType,
+          payload: op.payload as Prisma.InputJsonValue,
+          clientTimestamp: clientTs,
+          status: 'applied',
+          serverVersion,
+          serverAppliedAt: new Date(),
+        },
+      });
+
+      buckets.acked.push({
+        opId: op.opId,
+        serverVersion,
+        supplier: { supplierId: deactivated.id },
+      });
       return;
     }
 
@@ -608,8 +939,12 @@ export class SyncService {
         throw err;
       }
 
+      const resolvedSupplierId =
+        clientSupplierMap.get(remote.dto.supplierId) ?? remote.dto.supplierId;
+
       const purchaseDto = {
         ...remote.dto,
+        supplierId: resolvedSupplierId,
         opId: op.opId,
       };
 

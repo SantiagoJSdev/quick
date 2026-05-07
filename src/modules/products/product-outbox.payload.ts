@@ -18,6 +18,7 @@ export function buildProductOutboxPayload(
   return {
     product: {
       id: product.id,
+      catalogStoreId: product.catalogStoreId ?? null,
       sku: product.sku,
       barcode: product.barcode,
       name: product.name,

@@ -31,6 +31,15 @@ const integrationCtx = {
       products = moduleRef.get(ProductsService);
       prisma = moduleRef.get(PrismaService);
       await prisma.$connect();
+      await prisma.store.upsert({
+        where: { id: integrationCtx.storeId },
+        create: {
+          id: integrationCtx.storeId,
+          name: 'Integration test store',
+          type: 'main',
+        },
+        update: {},
+      });
     });
 
     afterAll(async () => {

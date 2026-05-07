@@ -18,6 +18,24 @@ export class SuppliersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(storeId: string, dto: CreateSupplierDto) {
+    const data = this.normalizeCreateBody(storeId, dto);
+    return this.prisma.supplier.create({ data });
+  }
+
+  /** Dentro de una transacción (`sync/push`). Misma normalización que `create`. */
+  createSupplierTx(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    dto: CreateSupplierDto,
+  ) {
+    const data = this.normalizeCreateBody(storeId, dto);
+    return tx.supplier.create({ data });
+  }
+
+  private normalizeCreateBody(
+    storeId: string,
+    dto: CreateSupplierDto,
+  ): Prisma.SupplierCreateInput {
     const name = dto.name.trim();
     const taxId = dto.taxId?.trim() || null;
     const phone = dto.phone?.trim() || null;
@@ -25,18 +43,16 @@ export class SuppliersService {
     const address = dto.address?.trim() || null;
     const notes = dto.notes?.trim() || null;
 
-    return this.prisma.supplier.create({
-      data: {
-        storeId,
-        name,
-        taxId,
-        phone,
-        email,
-        address,
-        notes,
-        active: true,
-      },
-    });
+    return {
+      store: { connect: { id: storeId } },
+      name,
+      taxId,
+      phone,
+      email,
+      address,
+      notes,
+      active: true,
+    };
   }
 
   async list(storeId: string, query: SuppliersListQueryDto) {
@@ -116,7 +132,38 @@ export class SuppliersService {
 
   async update(storeId: string, id: string, dto: UpdateSupplierDto) {
     await this.findOne(storeId, id);
+    const data = this.buildSupplierUpdateData(dto);
+    return this.prisma.supplier.update({
+      where: { id },
+      data,
+    });
+  }
 
+  updateSupplierTx(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    id: string,
+    dto: UpdateSupplierDto,
+  ) {
+    return this.applySupplierUpdateTx(tx, storeId, id, dto);
+  }
+
+  /** Soft delete: `active = false` (mantiene historial de compras). */
+  async softDelete(storeId: string, id: string) {
+    return this.update(storeId, id, { active: false });
+  }
+
+  softDeleteSupplierTx(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    id: string,
+  ) {
+    return this.applySupplierUpdateTx(tx, storeId, id, { active: false });
+  }
+
+  private buildSupplierUpdateData(
+    dto: UpdateSupplierDto,
+  ): Prisma.SupplierUpdateInput {
     const data: Prisma.SupplierUpdateInput = {};
     if (dto.name !== undefined) {
       data.name = dto.name.trim();
@@ -139,15 +186,25 @@ export class SuppliersService {
     if (dto.active !== undefined) {
       data.active = dto.active;
     }
+    return data;
+  }
 
-    return this.prisma.supplier.update({
+  private async applySupplierUpdateTx(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    id: string,
+    dto: UpdateSupplierDto,
+  ) {
+    const row = await tx.supplier.findFirst({
+      where: { id, storeId },
+    });
+    if (!row) {
+      throw new NotFoundException('Supplier not found');
+    }
+    const data = this.buildSupplierUpdateData(dto);
+    return tx.supplier.update({
       where: { id },
       data,
     });
-  }
-
-  /** Soft delete: `active = false` (mantiene historial de compras). */
-  async softDelete(storeId: string, id: string) {
-    return this.update(storeId, id, { active: false });
   }
 }
