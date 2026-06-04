@@ -37,6 +37,16 @@ enum OutboxStatus {
   FAILED
 }
 
+enum PosDeviceMode {
+  POS
+  DASHBOARD
+  HYBRID
+}
+
+enum DashboardView {
+  SALES_SUMMARY
+}
+
 // --- Multi-moneda (Venezuela / ERP simplificado) ---
 // Reglas: docs/domain/MULTI_CURRENCY_ARCHITECTURE.md
 // Product.cost = costo medio en moneda funcional (semantica documentada).
@@ -352,6 +362,12 @@ model POSDevice {
   store      Store    @relation(fields: [storeId], references: [id])
   lastSeen   DateTime?
   appVersion String?
+
+  dashboardEnabled         Boolean       @default(false)
+  deviceMode               PosDeviceMode @default(POS)
+  dashboardView            DashboardView @default(SALES_SUMMARY)
+  dashboardAccessTokenHash String?
+  lastHeartbeatAt          DateTime?
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

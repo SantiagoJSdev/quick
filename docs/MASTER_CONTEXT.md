@@ -74,6 +74,12 @@ Describe lo implementado, flujos reales, módulos, contratos mínimos y cómo ex
 - `GET /sync/pull`: cambios de catálogo (`PRODUCT_*`) desde `ServerChangeLog`.
 - `opId` idempotente para evitar duplicados de efectos reales.
 
+### 3.6.2 Dashboard operativo / reportes (v1)
+
+- `GET /reports/sales/summary|timeseries|payments|by-device` — KPIs en moneda funcional, filtro `preset` o `dateFrom`/`dateTo`, opcional `deviceId`.
+- `GET /dashboard/device/:deviceId` — kiosk con `X-Device-Token` (sin `X-Store-Id`).
+- `GET|PATCH /pos-devices/:deviceId/dashboard-config` — activar modo dashboard; PATCH requiere `DASHBOARD_ADMIN_PIN` (ver **`docs/api/REPORTS.md`**).
+
 ### 3.6.1 Observabilidad sync (ops)
 
 - `GET /ops/metrics` expone conteos de `SyncOperation` y, si hay fallos, **`sync.failedSamples`** (hasta 30 ops `failed` con `opId`, `opType`, `deviceId`, `failureReason`, etc.) para alinear con reintentos del POS. Ver **`docs/api/OPS_METRICS.md`**.
