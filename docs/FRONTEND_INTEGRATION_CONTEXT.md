@@ -77,6 +77,15 @@ Este documento sirve para:
 - Historial de ventas (`GET /sales`, `GET /sales/:id`).
 - Devoluciones (`POST /sale-returns`).
 
+### 4.8 Dashboard operativo (reportes)
+
+Contrato completo para integracion: **`docs/FRONTEND_DASHBOARD_API.md`**.
+
+- Operador: `GET /reports/sales/summary`, `timeseries`, `payments` (con `X-Store-Id` y `preset` o fechas).
+- Kiosk / TV: `GET /dashboard/device/:deviceId` con `X-Device-Token` (sin `X-Store-Id`).
+- Admin: `PATCH /pos-devices/:deviceId/dashboard-config` con `X-Dashboard-Admin-Pin`.
+- Montos y KPIs solo desde API; moneda funcional en `currencyCode`.
+
 ## 5) Reglas criticas de negocio
 
 ### 5.1 Multi-moneda

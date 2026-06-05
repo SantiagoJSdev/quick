@@ -12,7 +12,10 @@
     { "key": "supplierId", "value": "", "description": "UUID proveedor (tras npm run db:seed o Prisma Studio)" },
     { "key": "purchaseId", "value": "", "description": "UUID compra (respuesta POST /purchases)" },
     { "key": "saleLineId", "value": "", "description": "UUID SaleLine (sale.saleLines[0].id tras GET /sales/:id)" },
-    { "key": "saleReturnId", "value": "", "description": "UUID devolución (POST /sale-returns)" }
+    { "key": "saleReturnId", "value": "", "description": "UUID devolución (POST /sale-returns)" },
+    { "key": "deviceId", "value": "postman-device-001", "description": "ID instalación POS (sync/sales); path pos-devices y dashboard" },
+    { "key": "dashboardToken", "value": "", "description": "Copiar de PATCH dashboard-config (dashboardAccessToken, una sola vez)" },
+    { "key": "dashboardAdminPin", "value": "", "description": "Igual que DASHBOARD_ADMIN_PIN en .env del servidor" }
   ],
   "item": [
     {
@@ -434,6 +437,103 @@
               "raw": "{\n  \"deviceId\": \"postman-device-001\",\n  \"clientTime\": \"2026-04-04T12:00:00.000Z\",\n  \"lastServerVersion\": 0,\n  \"ops\": [\n    {\n      \"opId\": \"9c1b39e8-2f4a-4c17-9a89-8b5e7cb4b9d7\",\n      \"opType\": \"NOOP\",\n      \"timestamp\": \"2026-04-04T11:59:00.000Z\",\n      \"payload\": {}\n    }\n  ]\n}"
             },
             "url": "{{baseUrl}}/api/v1/sync/push"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard (reportes)",
+      "description": "Orden sugerido: 1) PATCH dashboard-config (guardar dashboardToken) → 2) GET summary/timeseries/payments → 3) GET dashboard/device con token. Variables: storeId, deviceId, dashboardAdminPin, dashboardToken.",
+      "item": [
+        {
+          "name": "GET dashboard-config",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Store-Id", "value": "{{storeId}}" }],
+            "url": "{{baseUrl}}/api/v1/pos-devices/{{deviceId}}/dashboard-config"
+          }
+        },
+        {
+          "name": "PATCH dashboard-config (habilitar + token)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-Store-Id", "value": "{{storeId}}" },
+              { "key": "X-Dashboard-Admin-Pin", "value": "{{dashboardAdminPin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dashboardEnabled\": true,\n  \"deviceMode\": \"DASHBOARD\",\n  \"dashboardView\": \"SALES_SUMMARY\",\n  \"regenerateToken\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pos-devices/{{deviceId}}/dashboard-config",
+            "description": "Copiar dashboardAccessToken de la respuesta a variable dashboardToken."
+          }
+        },
+        {
+          "name": "GET reports/sales/summary (preset=today)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Store-Id", "value": "{{storeId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/sales/summary?preset=today",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales", "summary"],
+              "query": [{ "key": "preset", "value": "today" }]
+            }
+          }
+        },
+        {
+          "name": "GET reports/sales/timeseries (preset=week)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Store-Id", "value": "{{storeId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/sales/timeseries?preset=week",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales", "timeseries"],
+              "query": [{ "key": "preset", "value": "week" }]
+            }
+          }
+        },
+        {
+          "name": "GET reports/sales/payments (preset=today)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Store-Id", "value": "{{storeId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/sales/payments?preset=today",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales", "payments"],
+              "query": [{ "key": "preset", "value": "today" }]
+            }
+          }
+        },
+        {
+          "name": "GET reports/sales/by-device (preset=today)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Store-Id", "value": "{{storeId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/sales/by-device?preset=today",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales", "by-device"],
+              "query": [{ "key": "preset", "value": "today" }]
+            }
+          }
+        },
+        {
+          "name": "GET dashboard/device (kiosk)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Device-Token", "value": "{{dashboardToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/device/{{deviceId}}?preset=today",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "device", "{{deviceId}}"],
+              "query": [{ "key": "preset", "value": "today" }]
+            },
+            "description": "Sin X-Store-Id. Requiere PATCH previo con regenerateToken."
           }
         }
       ]

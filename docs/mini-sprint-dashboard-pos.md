@@ -4,10 +4,11 @@
 >
 > | Documento | Contenido |
 > |-----------|-----------|
-> | [mini-sprint-dashboard-pos-BACKEND.md](./mini-sprint-dashboard-pos-BACKEND.md) | Análisis validado, mejoras, API, Prisma, fases y checklist **backend** (empezar aquí en este repo) |
-> | [mini-sprint-dashboard-pos-FRONTEND.md](./mini-sprint-dashboard-pos-FRONTEND.md) | Flutter: pantallas, API client, kiosk, UX y checklist **frontend** |
+> | [mini-sprint-dashboard-pos-BACKEND.md](./mini-sprint-dashboard-pos-BACKEND.md) | Análisis validado, mejoras, API, Prisma, fases y checklist **backend** |
+> | [**FRONTEND_DASHBOARD_API.md**](./FRONTEND_DASHBOARD_API.md) | **Handoff al front:** endpoints, headers, respuestas JSON y flujos |
+> | [mini-sprint-dashboard-pos-FRONTEND.md](./mini-sprint-dashboard-pos-FRONTEND.md) | Flutter: pantallas, estructura, kiosk, UX y checklist |
 >
-> Este archivo conserva la **visión de producto** original; los dos enlaces arriba son la guía técnica ejecutable.
+> Para integrar el cliente Flutter, usar **`FRONTEND_DASHBOARD_API.md`**. Este archivo conserva la visión de producto.
 
 ## Objetivo
 

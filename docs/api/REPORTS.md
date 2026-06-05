@@ -1,5 +1,7 @@
 # Reportes / Dashboard operativo (API)
 
+**Documento para el equipo Flutter (handoff):** [`../FRONTEND_DASHBOARD_API.md`](../FRONTEND_DASHBOARD_API.md) — incluye qué pantalla llama a qué endpoint y ejemplos completos de respuesta.
+
 Base: `/api/v1`. Montos en **string** decimal. Moneda de KPIs: **moneda funcional** de la tienda (`BusinessSettings.functionalCurrency`).
 
 ## Reglas de negocio (v1)

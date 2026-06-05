@@ -1,7 +1,8 @@
 # Mini Sprint Dashboard POS — Implementación Frontend (Flutter)
 
+> **Contrato API (entregar al equipo front):** [`FRONTEND_DASHBOARD_API.md`](./FRONTEND_DASHBOARD_API.md) — endpoints, headers, JSON de respuesta y flujos.  
 > **Origen:** `docs/mini-sprint-dashboard-pos.md`  
-> **Depende de:** `docs/mini-sprint-dashboard-pos-BACKEND.md`  
+> **Backend (ya implementado):** `docs/mini-sprint-dashboard-pos-BACKEND.md`  
 > **Contexto app:** `docs/FRONTEND_INTEGRATION_CONTEXT.md`
 
 ---
