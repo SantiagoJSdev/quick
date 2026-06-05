@@ -5,20 +5,22 @@
 | Audiencia | Documento |
 |-----------|-----------|
 | **Backend / full-stack** | [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) |
-| **Flutter / POS** | **[FRONTEND.md](./FRONTEND.md)** ← único doc front |
+| **Modelo de datos (tablas)** | **[DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md)** |
+| **Flutter / POS** | **[FRONTEND.md](./FRONTEND.md)** |
 | **Contratos HTTP** | [api/README.md](./api/README.md) |
 
 ## Estructura mínima
 
 ```text
 docs/
-  README.md           ← este índice
-  PROJECT_CONTEXT.md  ← backend: arquitectura, módulos, datos, flujos
-  FRONTEND.md         ← Flutter: integración, offline, pago mixto, fotos, dashboard…
-  api/                ← contratos HTTP detallados (sync, compras, ops)
+  README.md                 ← índice
+  PROJECT_CONTEXT.md        ← backend: arquitectura, módulos, flujos
+  DATABASE_SCHEMA_GUIDE.md  ← tablas, relaciones, SQL útil
+  FRONTEND.md               ← Flutter (único doc front)
+  api/                      ← contratos HTTP (sync, compras, ops)
 ```
 
-Fuente técnica del esquema: `prisma/schema.prisma` + resumen en PROJECT_CONTEXT §5.
+Fuente técnica del esquema: `prisma/schema.prisma` + guía legible [DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md).
 
 ## Mantenimiento
 

@@ -99,7 +99,9 @@ Documento único para desarrollar y extender el backend. Índice general: [docs/
 
 ## 5. Modelo de datos (PostgreSQL)
 
-Fuente exacta: `prisma/schema.prisma`. Resumen por dominio:
+**Guía completa de tablas y relaciones:** [DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md).
+
+Resumen rápido:
 
 ### Organización y configuración
 - **`Store`** — tienda/sucursal; `timezone` (IANA) para fechas de reportes/historial.
@@ -199,10 +201,11 @@ npm run db:seed           # monedas, tienda demo, settings, tasas
 
 Al cerrar una feature:
 
-1. Actualizar **este archivo** (módulos, flujos, modelo si hay migración).
-2. Si cambia contrato HTTP → `docs/api/<modulo>.md`.
-3. Si impacta Flutter → [FRONTEND.md](./FRONTEND.md).
-4. No crear documentos paralelos; usar [docs/README.md](./README.md).
+1. Actualizar **este archivo** (módulos, flujos).
+2. Si hay migración de tablas → [DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md).
+3. Si cambia contrato HTTP → `docs/api/<modulo>.md`.
+4. Si impacta Flutter → [FRONTEND.md](./FRONTEND.md).
+5. No crear documentos paralelos; usar [docs/README.md](./README.md).
 
 ---
 
