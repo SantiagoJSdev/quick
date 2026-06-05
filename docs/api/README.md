@@ -1,11 +1,14 @@
 # Contratos HTTP (referencia)
 
+Índice general: **[../README.md](../README.md)** · Contexto backend: **[../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md)**
+
 | Documento | Contenido |
 |-----------|-----------|
-| [REPORTS.md](./REPORTS.md) | Dashboard operativo (referencia backend). Handoff Flutter: [**FRONTEND_DASHBOARD_API.md**](../FRONTEND_DASHBOARD_API.md). |
-| [OPS_METRICS.md](./OPS_METRICS.md) | `GET /api/v1/ops/metrics` — auth, query `storeId`, forma de respuesta, `sync.failedSamples`, relación con logs del scheduler. |
-| [PURCHASES.md](./PURCHASES.md) | `POST/GET /purchases`, `sync/push` `PURCHASE_RECEIVE`, campo `supplierInvoiceReference`. |
-| [SYNC_PUSH_SALE.md](./SYNC_PUSH_SALE.md) | `sync/push` `SALE`: strings en líneas/pagos, ops `failed` y `opId`. |
-| [SYNC_PUSH_SUPPLIERS.md](./SYNC_PUSH_SUPPLIERS.md) | `sync/push` `SUPPLIER_*`: payloads JSON, `acked.supplier`, provisional + `PURCHASE_RECEIVE`, `sync/pull` `SUPPLIER_CREATED`… |
+| [OPS_METRICS.md](./OPS_METRICS.md) | `GET /ops/metrics` |
+| [PURCHASES.md](./PURCHASES.md) | Compras REST + sync `PURCHASE_RECEIVE` |
+| [SYNC_PUSH_SALE.md](./SYNC_PUSH_SALE.md) | Sync ventas `SALE` |
+| [SYNC_PUSH_SUPPLIERS.md](./SYNC_PUSH_SUPPLIERS.md) | Sync proveedores |
 
-Índice general del repo: **`docs/MASTER_CONTEXT.md`**.
+Dashboard y resto de integración Flutter: **[../FRONTEND.md](../FRONTEND.md)** §10.
+
+Swagger en vivo: `/api/docs` con el servidor levantado.
