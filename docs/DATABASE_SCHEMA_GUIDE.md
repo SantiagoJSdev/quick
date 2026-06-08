@@ -137,9 +137,6 @@ El esquema está orientado a:
 #### `IdempotencyRecord`
 - Cache `Idempotency-Key` (ej. `products-with-stock`).
 
-#### `OutboxEvent`
-- Cola transaccional → Mongo read models (`products_read`, etc.).
-
 ---
 
 ### 3.8 Organización

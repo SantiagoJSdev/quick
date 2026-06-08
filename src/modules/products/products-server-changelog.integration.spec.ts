@@ -2,7 +2,6 @@ import { randomUUID } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { BusinessSettings } from '@prisma/client';
 import { InventoryModule } from '../inventory/inventory.module';
-import { MongoModule } from '../../mongo/mongo.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductsService } from './products.service';
@@ -15,7 +14,7 @@ const integrationCtx = {
 };
 
 (run ? describe : describe.skip)(
-  'ProductsService outbox (integration, RUN_INTEGRATION=1)',
+  'ProductsService server changelog (integration, RUN_INTEGRATION=1)',
   () => {
     let moduleRef: TestingModule | undefined;
     let products: ProductsService | undefined;
@@ -24,7 +23,7 @@ const integrationCtx = {
 
     beforeAll(async () => {
       moduleRef = await Test.createTestingModule({
-        imports: [PrismaModule, MongoModule, InventoryModule],
+        imports: [PrismaModule, InventoryModule],
         providers: [ProductsService],
       }).compile();
 
@@ -48,8 +47,11 @@ const integrationCtx = {
       }
       const p = await prisma.product.findUnique({ where: { sku } });
       if (p) {
-        await prisma.outboxEvent.deleteMany({
-          where: { aggregateType: 'Product', aggregateId: p.id },
+        await prisma.serverChangeLog.deleteMany({
+          where: {
+            opType: 'PRODUCT_CREATED',
+            payload: { path: ['productId'], equals: p.id },
+          },
         });
         await prisma.product.delete({ where: { id: p.id } });
       }
@@ -57,7 +59,7 @@ const integrationCtx = {
       await moduleRef?.close();
     });
 
-    it('create writes PRODUCT_CREATED outbox row in same flow', async () => {
+    it('create writes PRODUCT_CREATED server changelog row in same flow', async () => {
       if (!products || !prisma) {
         throw new Error('Test module not initialized');
       }
@@ -71,16 +73,16 @@ const integrationCtx = {
         integrationCtx,
       );
 
-      const ev = await prisma.outboxEvent.findFirst({
+      const row = await prisma.serverChangeLog.findFirst({
         where: {
-          aggregateType: 'Product',
-          aggregateId: product.id,
-          eventType: 'PRODUCT_CREATED',
+          opType: 'PRODUCT_CREATED',
+          storeScopeId: integrationCtx.storeId,
         },
+        orderBy: { serverVersion: 'desc' },
       });
 
-      expect(ev).not.toBeNull();
-      expect(ev?.status).toBeDefined();
+      expect(row).not.toBeNull();
+      expect(row?.payload).toMatchObject({ productId: product.id });
     });
   },
 );

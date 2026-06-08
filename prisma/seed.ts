@@ -97,25 +97,6 @@ async function main() {
           notes: 'Ejemplo por tienda (sin tasa global)',
         },
       });
-      await prisma.outboxEvent.create({
-        data: {
-          aggregateType: 'ExchangeRate',
-          aggregateId: rate.id,
-          eventType: 'EXCHANGE_RATE_UPSERTED',
-          payload: {
-            exchangeRate: {
-              id: rate.id,
-              storeId: store.id,
-              baseCurrencyCode: 'USD',
-              quoteCurrencyCode: 'VES',
-              rateQuotePerBase: '36.5',
-              effectiveDate: today.toISOString().slice(0, 10),
-              source: 'SEED',
-              notes: 'Ejemplo por tienda (sin tasa global)',
-            },
-          },
-        },
-      });
     }
 
     const eurUsdExists = await prisma.exchangeRate.findFirst({
@@ -137,25 +118,6 @@ async function main() {
           effectiveDate: today,
           source: 'SEED_EUR_USD',
           notes: 'Ejemplo segundo par (1 EUR = 1.08 USD); POST /exchange-rates para más pares',
-        },
-      });
-      await prisma.outboxEvent.create({
-        data: {
-          aggregateType: 'ExchangeRate',
-          aggregateId: eurRate.id,
-          eventType: 'EXCHANGE_RATE_UPSERTED',
-          payload: {
-            exchangeRate: {
-              id: eurRate.id,
-              storeId: store.id,
-              baseCurrencyCode: 'EUR',
-              quoteCurrencyCode: 'USD',
-              rateQuotePerBase: '1.08',
-              effectiveDate: today.toISOString().slice(0, 10),
-              source: 'SEED_EUR_USD',
-              notes: eurRate.notes,
-            },
-          },
         },
       });
     }

@@ -54,7 +54,7 @@ npx prisma generate
 npx prisma migrate dev
 ```
 
-5. (Opcional) Seed: monedas **USD / VES / EUR**, **crea una tienda por defecto si no hay ninguna**, `BusinessSettings`, tasas ejemplo **USD/VES** y **EUR/USD** (segundo par) + outbox. Comando correcto:
+5. (Opcional) Seed: monedas **USD / VES / EUR**, **crea una tienda por defecto si no hay ninguna**, `BusinessSettings`, tasas ejemplo **USD/VES** y **EUR/USD** (segundo par). Comando correcto:
 
 ```bash
 npm run db:seed
@@ -70,30 +70,18 @@ npm run start:dev
 
 ## Inspeccionar PostgreSQL en Windows
 
-PostgreSQL usa **tablas** (no “colecciones”; eso es Mongo).
-
-1. **Prisma Studio** (recomendado para este proyecto): en la raiz del backend ejecuta `npx prisma studio` y abre el navegador. Veras `ExchangeRate`, `Currency`, `Store`, `Product`, `OutboxEvent`, etc.
+1. **Prisma Studio** (recomendado para este proyecto): en la raiz del backend ejecuta `npx prisma studio` y abre el navegador. Veras `ExchangeRate`, `Currency`, `Store`, `Product`, etc.
 2. **pgAdmin** o **DBeaver**: conecta con los mismos datos que `DATABASE_URL` (host, puerto, usuario, contraseña, base `gemini`).
 3. **Docker**: si Postgres corre en contenedor, puedes usar `docker exec -it gemini-postgres psql -U postgres -d gemini` y luego `\dt` para listar tablas.
 
-## Nombres de base: PostgreSQL vs Mongo
+## Nombre de base PostgreSQL
 
-| Motor | Dónde se configura el nombre | Notas |
-|-------|------------------------------|--------|
-| **PostgreSQL** | En **`DATABASE_URL`**: el segmento tras el puerto `5432/` y antes de `?` es el nombre de la base (ej. `.../gemini?schema=public` → base `gemini`). El **`schema`** (p. ej. `public`) es el esquema dentro de esa base. | Si cambias el nombre, crea antes la base en el servidor (`CREATE DATABASE ...`) y ejecuta `npx prisma migrate dev` (o `deploy`). |
-| **MongoDB** | Variable **`MONGODB_DATABASE_NAME`** (opcional; por defecto en código **`quickmarket`**). La URI **`MONGODB_URI`** apunta al servidor; el nombre de la base lo elige la app al hacer `client.db(MONGODB_DATABASE_NAME)`. | Puedes usar `MONGODB_DATABASE_NAME=quickmarket` u otro nombre sin cambiar el host de la URI. |
+En **`DATABASE_URL`**: el segmento tras el puerto `5432/` y antes de `?` es el nombre de la base (ej. `.../gemini?schema=public` → base `gemini`). El **`schema`** (p. ej. `public`) es el esquema dentro de esa base. Si cambias el nombre, crea antes la base en el servidor (`CREATE DATABASE ...`) y ejecuta `npx prisma migrate dev` (o `deploy`).
 
 ## Reset completo en desarrollo
 
-- **`npm run db:reset:dev`**: PostgreSQL → `prisma migrate reset --force` (todas las tablas del schema, migraciones + seed). Si **`MONGODB_URI`** está definido, vacía las colecciones **`products_read`** y **`fx_rates_read`** en la base `MONGODB_DATABASE_NAME`.
-- Para **eliminar toda la base Mongo** con ese nombre (dev): **`npm run db:reset:dev:mongo-drop`** (equivale a `MONGODB_DROP_DATABASE=1` + mismo script). En PowerShell también puedes: `$env:MONGODB_DROP_DATABASE='1'; npm run db:reset:dev`.
-- Solo Postgres, sin tocar Mongo: **`npm run db:reset`**.
-
-## Mongo: `products_read` y `fx_rates_read`
-
-- **`products_read`**: proyeccion del catalogo (eventos de producto en outbox).
-- **`fx_rates_read`**: proyeccion de la **ultima tasa por tienda y par** (USD/VES, etc.) cuando se crea un `ExchangeRate` y el worker procesa el outbox. Sirve para lectura rapida / sync hacia dispositivos si expones Mongo al cliente (o replica local).
-- **PostgreSQL** sigue siendo la fuente maestra; Mongo es eventual.
+- **`npm run db:reset:dev`**: PostgreSQL → `prisma migrate reset --force` (todas las tablas del schema, migraciones + seed). Requiere `ALLOW_DEV_DB_RESET=1` (el script `db:reset:dev` lo inyecta).
+- **`npm run db:reset`**: mismo reset sin el script wrapper.
 
 ## Prisma: carpeta `prisma/migrations/`
 
@@ -139,9 +127,9 @@ Tras importar, rellena **`storeId`** con el UUID de tu tienda (salida del seed o
 
 **Compras**: `POST /api/v1/purchases`, `GET /api/v1/purchases/:id`; `sync/push` con `opType: PURCHASE_RECEIVE`; `npm run db:seed` crea un proveedor por defecto si no hay ninguno. Contrato detallado (incl. `supplierInvoiceReference`): **`docs/api/PURCHASES.md`**.
 
-**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos, métricas de outbox (pending, lag del más antiguo, failed) y sync (`SyncOperation` por estado + `StoreSyncState` + **`failedSamples`** para correlacionar ops fallidas con el POS por `opId`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*`, `OUTBOX_PENDING_WARN`, `OUTBOX_LAG_WARN_SECONDS` en `.env.example`. **Auth:** `OPS_API_KEY` / `OPS_IP_ALLOWLIST` (ver arriba). Referencia: **`docs/api/OPS_METRICS.md`**.
+**Observabilidad (M5)**: `GET /api/v1/ops/metrics` — reconciliación inventario vs movimientos y sync (`SyncOperation` por estado + `StoreSyncState` + **`failedSamples`** para correlacionar ops fallidas con el POS por `opId`). Job en background (cada 2 min por defecto) escribe **warnings** en log si hay desvíos; variables `OPS_SCHEDULER_*` en `.env.example`. **Auth:** `OPS_API_KEY` / `OPS_IP_ALLOWLIST` (ver arriba). Referencia: **`docs/api/OPS_METRICS.md`**.
 
-**Pruebas de integración (M6 parcial):** `npm run test:integration` (`RUN_INTEGRATION=1`) — requiere DB sembrada (`npm run db:seed`). Cubre outbox al crear producto, sync `NOOP`/pull, **FX inmutable en ventas** y **SALE** en sync con el mismo `opId`.
+**Pruebas de integración (M6 parcial):** `npm run test:integration` (`RUN_INTEGRATION=1`) — requiere DB sembrada (`npm run db:seed`). Cubre `ServerChangeLog` al crear producto, sync `NOOP`/pull, **FX inmutable en ventas** y **SALE** en sync con el mismo `opId`.
 
 **Devoluciones (M6)**: `POST /api/v1/sale-returns`, `GET /api/v1/sale-returns/:id`; `sync/push` `SALE_RETURN`. Política: Swagger `/api/docs` y `docs/PROJECT_CONTEXT.md`.
 
@@ -181,7 +169,7 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-**Integración con PostgreSQL** (outbox + `sync/push`): con la base migrada y seed:
+**Integración con PostgreSQL** (`sync/push` + `sync/pull`): con la base migrada y seed:
 
 ```powershell
 npm run test:integration

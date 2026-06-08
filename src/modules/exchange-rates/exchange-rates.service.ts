@@ -193,28 +193,6 @@ export class ExchangeRatesService {
         },
       });
 
-      const payload: Prisma.InputJsonValue = {
-        exchangeRate: {
-          id: created.id,
-          storeId,
-          baseCurrencyCode: created.baseCurrency.code,
-          quoteCurrencyCode: created.quoteCurrency.code,
-          rateQuotePerBase: created.rateQuotePerBase.toString(),
-          effectiveDate: created.effectiveDate.toISOString().slice(0, 10),
-          source: created.source,
-          notes: created.notes,
-        },
-      };
-
-      await tx.outboxEvent.create({
-        data: {
-          aggregateType: 'ExchangeRate',
-          aggregateId: created.id,
-          eventType: 'EXCHANGE_RATE_UPSERTED',
-          payload,
-        },
-      });
-
       return created;
     });
   }

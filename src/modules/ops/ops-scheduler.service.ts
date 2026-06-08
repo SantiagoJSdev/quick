@@ -39,7 +39,7 @@ export class OpsSchedulerService implements OnModuleInit, OnModuleDestroy {
 
     this.timer = setInterval(() => void this.tick(), intervalMs);
     this.logger.log(
-      `Ops scheduler: inventory/outbox/sync checks every ${intervalMs}ms`,
+      `Ops scheduler: inventory/sync checks every ${intervalMs}ms`,
     );
   }
 
@@ -52,43 +52,14 @@ export class OpsSchedulerService implements OnModuleInit, OnModuleDestroy {
 
   private async tick(): Promise<void> {
     try {
-      const pendingWarn = Number(
-        this.config.get<string>('OUTBOX_PENDING_WARN', '100'),
-      );
-      const lagWarn = Number(
-        this.config.get<string>('OUTBOX_LAG_WARN_SECONDS', '300'),
-      );
-
-      const [inv, outbox, sync] = await Promise.all([
+      const [inv, sync] = await Promise.all([
         this.reconciliation.runInventoryCheck(),
-        this.queues.getOutboxMetrics(),
         this.queues.getSyncMetrics(),
       ]);
 
       if (inv.mismatchCount > 0) {
         this.logger.warn(
           `Inventory reconciliation: ${inv.mismatchCount} mismatch(es) — check GET /api/v1/ops/metrics`,
-        );
-      }
-
-      if (outbox.pendingCount >= pendingWarn) {
-        this.logger.warn(
-          `Outbox pending backlog: ${outbox.pendingCount} events (warn threshold ${pendingWarn})`,
-        );
-      }
-
-      if (
-        outbox.pendingLagSeconds != null &&
-        outbox.pendingLagSeconds >= lagWarn
-      ) {
-        this.logger.warn(
-          `Outbox oldest pending lag: ${outbox.pendingLagSeconds}s (warn ${lagWarn}s)`,
-        );
-      }
-
-      if (outbox.failedCount > 0) {
-        this.logger.warn(
-          `Outbox FAILED events: ${outbox.failedCount} (inspect outbox_events / worker logs)`,
         );
       }
 

@@ -8,8 +8,7 @@ Documento único para desarrollar y extender el backend. Índice general: [docs/
 
 | Capa | Tecnología | Rol |
 |------|------------|-----|
-| Transaccional | **PostgreSQL** + Prisma | Fuente de verdad: catálogo, inventario, ventas, compras, devoluciones, sync |
-| Lectura eventual | **MongoDB** (opcional) | `products_read`, `fx_rates_read` vía outbox |
+| Datos | **PostgreSQL** + Prisma | Única fuente de verdad: catálogo, inventario, ventas, compras, devoluciones, sync |
 | API | **NestJS** `/api/v1` | REST; casi todo exige `X-Store-Id` + `BusinessSettings` |
 | Offline POS | `sync/push`, `sync/pull` | Ops idempotentes por `opId`; pull de catálogo vía `ServerChangeLog` |
 
@@ -50,8 +49,7 @@ Documento único para desarrollar y extender el backend. Índice general: [docs/
 | `sync` | `push` / `pull` offline |
 | `reports` | Dashboard operativo (summary, timeseries, payments, kiosk) |
 | `pos-device` | Registro terminales + config dashboard |
-| `ops` | Métricas reconciliación / sync / outbox |
-| `outbox` | Worker eventos → Mongo read models |
+| `ops` | Métricas reconciliación inventario / sync |
 
 ---
 
@@ -123,7 +121,7 @@ Resumen rápido:
 
 ### Dispositivos y sync
 - **`POSDevice`** — `deviceId` (instalación), `storeId`, modo dashboard (`deviceMode`, `dashboardEnabled`, token hash).
-- **`SyncOperation`**, **`StoreSyncState`**, **`ServerChangeLog`**, **`IdempotencyRecord`**, **`OutboxEvent`**.
+- **`SyncOperation`**, **`StoreSyncState`**, **`ServerChangeLog`**, **`IdempotencyRecord`**.
 
 ### Relaciones clave
 
@@ -176,14 +174,13 @@ Detalle de payloads: [api/README.md](./api/README.md) y Swagger.
 ## 7. Entorno y bases de datos
 
 - **PostgreSQL:** nombre en `DATABASE_URL` (`...:5432/<db>?schema=public`).
-- **Mongo:** `MONGODB_URI`, `MONGODB_DATABASE_NAME` (default `quickmarket`).
 - **Variables relevantes:** `DASHBOARD_ADMIN_PIN`, `OPS_API_KEY`, `STORE_ONBOARDING_ENABLED`, `IDEMPOTENCY_TTL_HOURS`.
 
 Reset desarrollo:
 
 ```bash
-npm run db:reset          # solo Postgres
-npm run db:reset:dev      # Postgres + limpiar Mongo read models
+npm run db:reset          # Postgres (migrate reset + seed)
+npm run db:reset:dev      # igual, con guard ALLOW_DEV_DB_RESET
 npm run db:seed           # monedas, tienda demo, settings, tasas
 ```
 

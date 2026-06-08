@@ -65,7 +65,7 @@ export class ProductsWithStockController {
   @ApiBody({ type: CreateProductWithStockDto })
   @ApiOkResponse({
     description:
-      'Producto creado (misma semántica que `POST /products` + outbox) y línea de inventario tras `IN_ADJUST` en la misma transacción. Con la misma Idempotency-Key y cuerpo, respuesta repetida sin crear otro producto.',
+      'Producto creado (misma semántica que `POST /products`) y línea de inventario tras `IN_ADJUST` en la misma transacción. Con la misma Idempotency-Key y cuerpo, respuesta repetida sin crear otro producto.',
   })
   create(
     @Body() dto: CreateProductWithStockDto,

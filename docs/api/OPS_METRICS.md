@@ -1,6 +1,6 @@
 # GET `/api/v1/ops/metrics` (M5 — observabilidad)
 
-No requiere **`X-Store-Id`**. Sirve para operaciones, reconciliación y depuración de colas (outbox Mongo, sync PostgreSQL).
+No requiere **`X-Store-Id`**. Sirve para operaciones, reconciliación de inventario y depuración de la cola de sync (PostgreSQL).
 
 ## Autenticación
 
@@ -12,7 +12,7 @@ No requiere **`X-Store-Id`**. Sirve para operaciones, reconciliación y depuraci
 
 | Parámetro  | Obligatorio | Descripción |
 |------------|-------------|-------------|
-| `storeId`  | No          | Si se envía (UUID), la sección **`inventoryReconciliation`** se limita a esa tienda. Outbox y sync son globales. |
+| `storeId`  | No          | Si se envía (UUID), la sección **`inventoryReconciliation`** se limita a esa tienda. Sync es global. |
 
 **Ejemplo:** `GET /api/v1/ops/metrics?storeId=<uuid>`
 
@@ -22,7 +22,6 @@ No requiere **`X-Store-Id`**. Sirve para operaciones, reconciliación y depuraci
 {
   "serverTime": "2026-04-13T12:00:00.000Z",
   "inventoryReconciliation": { },
-  "outbox": { },
   "sync": { }
 }
 ```
@@ -30,14 +29,6 @@ No requiere **`X-Store-Id`**. Sirve para operaciones, reconciliación y depuraci
 ### `inventoryReconciliation`
 
 Objeto devuelto por la reconciliación inventario vs movimientos (campos dependen de implementación; suele incluir `mismatchCount` y detalle por producto cuando hay desvíos).
-
-### `outbox`
-
-Métricas de **`OutboxEvent`** (Mongo / worker):
-
-- `byStatus`: conteos por estado (`PENDING`, `PROCESSING`, `PROCESSED`, `FAILED`, …).
-- `pendingCount`, `processingCount`, `failedCount`, `processedApprox`.
-- `oldestPendingAvailableAt`, `pendingLagSeconds` (antigüedad del pendiente más viejo).
 
 ### `sync`
 
@@ -70,6 +61,4 @@ Cada ítem permite **correlacionar con el POS** (mismo `opId` que el cliente rei
 
 ## Logs del scheduler
 
-El job **`OpsSchedulerService`** (intervalo por defecto **120 s**, configurable con **`OPS_SCHEDULER_ENABLED`**, **`OPS_SCHEDULER_INTERVAL_MS`**) emite **warnings** cuando hay desvíos de inventario, backlog de outbox o **sync fallidas**. En el caso de `failedCount > 0`, el log incluye un resumen JSON alineado con `failedSamples` (mismo criterio de correlación por `opId`).
-
-Variables relacionadas: **`OUTBOX_PENDING_WARN`**, **`OUTBOX_LAG_WARN_SECONDS`** (ver `.env.example`).
+El job **`OpsSchedulerService`** (intervalo por defecto **120 s**, configurable con **`OPS_SCHEDULER_ENABLED`**, **`OPS_SCHEDULER_INTERVAL_MS`**) emite **warnings** cuando hay desvíos de inventario o **sync fallidas**. En el caso de `failedCount > 0`, el log incluye un resumen JSON alineado con `failedSamples` (mismo criterio de correlación por `opId`).

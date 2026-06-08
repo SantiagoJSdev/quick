@@ -16,23 +16,16 @@ import {
   toJsonSafeForCache,
 } from '../../common/idempotency/request-body-hash';
 import { InventoryService } from '../inventory/inventory.service';
-import { MongoService } from '../../mongo/mongo.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import type { CreateProductWithStockDto } from './dto/create-product-with-stock.dto';
-import type { ProductReadSource } from './dto/products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { computeProductMarginDerivatives } from './product-margin-derivatives';
 import { productSyncPullPayload } from './product-pull-payload';
 import {
-  buildProductOutboxPayload,
-  type ProductForOutbox,
-  productOutboxInclude,
-} from './product-outbox.payload';
-import {
-  mongoProductReadToApiShape,
-  type MongoProductReadDoc,
-} from './products-read.mapper';
+  productRelationInclude,
+  type ProductWithRelations,
+} from './product-relations.include';
 
 /** From `StoreConfiguredGuard` (`req.storeContext`). */
 export type ProductStoreContext = {
@@ -57,7 +50,6 @@ export class ProductsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mongo: MongoService,
     private readonly inventory: InventoryService,
   ) {}
 
@@ -211,7 +203,7 @@ export class ProductsService {
     tx: Prisma.TransactionClient,
     dto: CreateProductDto,
     catalogStoreId: string,
-  ): Promise<ProductForOutbox> {
+  ): Promise<ProductWithRelations> {
     const skuFinal = await this.resolveCreateSku(tx, dto.sku);
     const barcodeVal = this.normalizeBarcodeInput(dto.barcode);
 
@@ -241,16 +233,7 @@ export class ProductsService {
           ? { marginPercentOverride: marginParsed }
           : {}),
       },
-      include: productOutboxInclude,
-    });
-
-    await tx.outboxEvent.create({
-      data: {
-        aggregateType: 'Product',
-        aggregateId: product.id,
-        eventType: 'PRODUCT_CREATED',
-        payload: buildProductOutboxPayload(product),
-      },
+      include: productRelationInclude,
     });
 
     await tx.serverChangeLog.create({
@@ -320,128 +303,7 @@ export class ProductsService {
     return product;
   }
 
-  /**
-   * Catalog list: Mongo `products_read` first when `source` is `auto` or `mongo`, else Postgres.
-   * `auto` falls back to Postgres if Mongo is down or the query fails.
-   */
-  async findAllCatalog(
-    includeInactive: boolean,
-    source: ProductReadSource = 'auto',
-    ctx: ProductStoreContext,
-  ): Promise<{ data: unknown[]; readSource: 'mongo' | 'postgres' }> {
-    const { settings } = ctx;
-    if (source === 'postgres') {
-      return {
-        data: await this.findAllPostgres(includeInactive, ctx),
-        readSource: 'postgres',
-      };
-    }
-    if (source === 'mongo') {
-      return {
-        data: await this.findAllMongoOrThrow(includeInactive, ctx),
-        readSource: 'mongo',
-      };
-    }
-    const client = this.mongo.getClient();
-    if (!client) {
-      return {
-        data: await this.findAllPostgres(includeInactive, ctx),
-        readSource: 'postgres',
-      };
-    }
-    try {
-      const data = await this.findAllMongo(includeInactive, client, ctx);
-      return { data, readSource: 'mongo' };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `Catalog list: Mongo failed (${message}) — falling back to Postgres`,
-      );
-      return {
-        data: await this.findAllPostgres(includeInactive, ctx),
-        readSource: 'postgres',
-      };
-    }
-  }
-
-  /**
-   * Single product: same resolution as list. In `auto`, if missing in Mongo, tries Postgres
-   * (projection lag).
-   */
-  async findOneCatalog(
-    id: string,
-    source: ProductReadSource = 'auto',
-    ctx: ProductStoreContext,
-  ): Promise<{ data: unknown; readSource: 'mongo' | 'postgres' }> {
-    const { settings, storeId } = ctx;
-    if (source === 'postgres') {
-      return {
-        data: this.attachMarginDerivatives(
-          await this.assertProductInStoreCatalog(id, storeId),
-          settings,
-        ),
-        readSource: 'postgres',
-      };
-    }
-    if (source === 'mongo') {
-      const doc = await this.findOneMongoOrThrow(id);
-      if (!doc) {
-        throw new NotFoundException('Product not found');
-      }
-      await this.assertProductInStoreCatalog(id, storeId);
-      return {
-        data: this.attachMarginDerivatives(
-          mongoProductReadToApiShape(doc),
-          settings,
-        ),
-        readSource: 'mongo',
-      };
-    }
-    const client = this.mongo.getClient();
-    if (!client) {
-      return {
-        data: this.attachMarginDerivatives(
-          await this.assertProductInStoreCatalog(id, storeId),
-          settings,
-        ),
-        readSource: 'postgres',
-      };
-    }
-    try {
-      const doc = await this.findOneMongo(id, client);
-      if (doc) {
-        await this.assertProductInStoreCatalog(id, storeId);
-        return {
-          data: this.attachMarginDerivatives(
-            mongoProductReadToApiShape(doc),
-            settings,
-          ),
-          readSource: 'mongo',
-        };
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `Catalog get ${id}: Mongo failed (${message}) — falling back to Postgres`,
-      );
-    }
-    return {
-      data: this.attachMarginDerivatives(
-        await this.assertProductInStoreCatalog(id, storeId),
-        settings,
-      ),
-      readSource: 'postgres',
-    };
-  }
-
-  private dbName() {
-    return process.env.MONGODB_DATABASE_NAME?.trim() || 'quickmarket';
-  }
-
-  private async findAllPostgres(
-    includeInactive: boolean,
-    ctx: ProductStoreContext,
-  ) {
+  async findAllCatalog(includeInactive: boolean, ctx: ProductStoreContext) {
     const rows = await this.prisma.product.findMany({
       where: this.catalogWhere(includeInactive, ctx.storeId),
       orderBy: { createdAt: 'desc' },
@@ -449,70 +311,9 @@ export class ProductsService {
     return rows.map((p) => this.attachMarginDerivatives(p, ctx.settings));
   }
 
-  private async findAllMongo(
-    includeInactive: boolean,
-    client: NonNullable<ReturnType<MongoService['getClient']>>,
-    ctx: ProductStoreContext,
-  ) {
-    const rows = await this.prisma.product.findMany({
-      where: this.catalogWhere(includeInactive, ctx.storeId),
-      orderBy: { createdAt: 'desc' },
-    });
-    if (rows.length === 0) {
-      return [];
-    }
-    const coll = client
-      .db(this.dbName())
-      .collection<MongoProductReadDoc>('products_read');
-    const ids = rows.map((r) => r.id);
-    const docs = await coll.find({ _id: { $in: ids } }).toArray();
-    const byId = new Map(
-      docs.map((d) => [d._id as string, d] as const),
-    );
-    const { settings } = ctx;
-    return rows.map((pgRow) => {
-      const doc = byId.get(pgRow.id);
-      if (doc) {
-        return this.attachMarginDerivatives(
-          mongoProductReadToApiShape(doc),
-          settings,
-        );
-      }
-      return this.attachMarginDerivatives(pgRow as object, settings);
-    });
-  }
-
-  private async findAllMongoOrThrow(
-    includeInactive: boolean,
-    ctx: ProductStoreContext,
-  ) {
-    const client = this.mongo.getClient();
-    if (!client) {
-      throw new ServiceUnavailableException(
-        'MongoDB read model is not configured or unavailable',
-      );
-    }
-    return this.findAllMongo(includeInactive, client, ctx);
-  }
-
-  private async findOneMongo(
-    id: string,
-    client: NonNullable<ReturnType<MongoService['getClient']>>,
-  ) {
-    const coll = client
-      .db(this.dbName())
-      .collection<MongoProductReadDoc>('products_read');
-    return coll.findOne({ _id: id });
-  }
-
-  private async findOneMongoOrThrow(id: string) {
-    const client = this.mongo.getClient();
-    if (!client) {
-      throw new ServiceUnavailableException(
-        'MongoDB read model is not configured or unavailable',
-      );
-    }
-    return this.findOneMongo(id, client);
+  async findOneCatalog(id: string, ctx: ProductStoreContext) {
+    const product = await this.assertProductInStoreCatalog(id, ctx.storeId);
+    return this.attachMarginDerivatives(product, ctx.settings);
   }
 
   private attachMarginDerivatives<T extends object>(
@@ -623,16 +424,7 @@ export class ProductsService {
       const product = await tx.product.update({
         where: { id },
         data: cleaned,
-        include: productOutboxInclude,
-      });
-
-      await tx.outboxEvent.create({
-        data: {
-          aggregateType: 'Product',
-          aggregateId: product.id,
-          eventType: 'PRODUCT_UPDATED',
-          payload: buildProductOutboxPayload(product),
-        },
+        include: productRelationInclude,
       });
 
       await tx.serverChangeLog.create({
@@ -661,16 +453,7 @@ export class ProductsService {
       const product = await tx.product.update({
         where: { id },
         data: { active: false },
-        include: productOutboxInclude,
-      });
-
-      await tx.outboxEvent.create({
-        data: {
-          aggregateType: 'Product',
-          aggregateId: product.id,
-          eventType: 'PRODUCT_DEACTIVATED',
-          payload: buildProductOutboxPayload(product),
-        },
+        include: productRelationInclude,
       });
 
       await tx.serverChangeLog.create({

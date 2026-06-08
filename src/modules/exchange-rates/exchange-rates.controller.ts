@@ -22,7 +22,7 @@ export class ExchangeRatesController {
     });
   }
 
-  /** Alta manual. Requiere `X-Store-Id`. Dispara outbox -> Mongo `fx_rates_read`. */
+  /** Alta manual. Requiere `X-Store-Id`. */
   @Post()
   create(@Req() req: Request, @Body() dto: CreateExchangeRateDto) {
     return this.exchangeRates.create(req.storeContext!.storeId, dto);

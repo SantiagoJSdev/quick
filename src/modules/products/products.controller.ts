@@ -9,15 +9,11 @@ import {
   Post,
   Query,
   Req,
-  Res,
 } from '@nestjs/common';
 import { ApiQuery } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import { CreateProductDto } from './dto/create-product.dto';
-import {
-  ProductIdQueryDto,
-  ProductsQueryDto,
-} from './dto/products-query.dto';
+import { ProductsQueryDto } from './dto/products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import {
   type ProductStoreContext,
@@ -42,36 +38,16 @@ export class ProductsController {
   }
 
   @Get()
-  async findAll(
-    @Query() query: ProductsQueryDto,
-    @Res({ passthrough: true }) res: Response,
-    @Req() req: Request,
-  ) {
-    const source = query.source ?? 'auto';
-    const { data, readSource } = await this.productsService.findAllCatalog(
+  findAll(@Query() query: ProductsQueryDto, @Req() req: Request) {
+    return this.productsService.findAllCatalog(
       query.includeInactive ?? false,
-      source,
       this.storeContext(req),
     );
-    res.setHeader('X-Catalog-Source', readSource);
-    return data;
   }
 
   @Get(':id')
-  async findOne(
-    @Param('id') id: string,
-    @Query() query: ProductIdQueryDto,
-    @Res({ passthrough: true }) res: Response,
-    @Req() req: Request,
-  ) {
-    const source = query.source ?? 'auto';
-    const { data, readSource } = await this.productsService.findOneCatalog(
-      id,
-      source,
-      this.storeContext(req),
-    );
-    res.setHeader('X-Catalog-Source', readSource);
-    return data;
+  findOne(@Param('id') id: string, @Req() req: Request) {
+    return this.productsService.findOneCatalog(id, this.storeContext(req));
   }
 
   @Patch(':id')
@@ -79,20 +55,20 @@ export class ProductsController {
     name: 'syncListPriceFromMargin',
     required: false,
     description:
-      'Si es `1` o `true`, misma semántica que `applySuggestedListPrice: true` en el body (persistir `price` desde margen M7).',
+      'Si true y el producto usa margen, recalcula price desde cost + margen efectivo',
+  })
+  @ApiQuery({
+    name: 'applySuggestedListPrice',
+    required: false,
+    description:
+      'Alias de syncListPriceFromMargin (misma semántica en PATCH)',
   })
   update(
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
-    @Query('syncListPriceFromMargin') syncListPriceFromMargin: string | undefined,
     @Req() req: Request,
   ) {
-    const fromQuery =
-      syncListPriceFromMargin === '1' ||
-      syncListPriceFromMargin === 'true';
-    return this.productsService.update(id, dto, this.storeContext(req), {
-      syncListPriceFromMargin: fromQuery,
-    });
+    return this.productsService.update(id, dto, this.storeContext(req));
   }
 
   @Delete(':id')
@@ -100,4 +76,3 @@ export class ProductsController {
     return this.productsService.remove(id, this.storeContext(req));
   }
 }
-

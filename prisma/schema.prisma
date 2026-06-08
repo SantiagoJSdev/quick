@@ -30,13 +30,6 @@ enum StockMovementType {
   OUT_TRANSFER
 }
 
-enum OutboxStatus {
-  PENDING
-  PROCESSING
-  PROCESSED
-  FAILED
-}
-
 enum PosDeviceMode {
   POS
   DASHBOARD
@@ -508,31 +501,6 @@ model SyncOperation {
   failureDetails  String?   @db.Text
 
   @@index([storeId, clientTimestamp])
-}
-
-model OutboxEvent {
-  id            String       @id @default(uuid())
-
-  aggregateType String
-  aggregateId   String
-  eventType     String
-  payload       Json
-
-  status        OutboxStatus @default(PENDING)
-  attempts      Int          @default(0)
-  availableAt   DateTime     @default(now())
-
-  lockedAt      DateTime?
-  lockedBy      String?
-
-  lastError     String?
-  createdAt     DateTime     @default(now())
-  processedAt   DateTime?
-
-  @@index([status, availableAt])
-  @@index([createdAt])
-  @@index([aggregateType, aggregateId, createdAt])
-  @@index([eventType, createdAt])
 }
 
 /// Append-only log for `GET /sync/pull` (server-originated ops). `serverVersion` is global monotonic.

@@ -47,7 +47,7 @@
                 }
               ]
             },
-            "description": "Reconciliación inventario vs movimientos, outbox, sync. Sin header de tienda."
+            "description": "Reconciliación inventario vs movimientos y sync. Sin header de tienda."
           }
         }
       ]
@@ -63,11 +63,10 @@
               { "key": "X-Store-Id", "value": "{{storeId}}" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/products?source=auto&includeInactive=false",
+              "raw": "{{baseUrl}}/api/v1/products?includeInactive=false",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "products"],
               "query": [
-                { "key": "source", "value": "auto" },
                 { "key": "includeInactive", "value": "false" }
               ]
             }

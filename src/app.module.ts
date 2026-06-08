@@ -5,7 +5,6 @@ import { StoreConfiguredGuard } from './common/guards/store-configured.guard';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { MongoModule } from './mongo/mongo.module';
 import { ProductsModule } from './modules/products/products.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { BusinessSettingsModule } from './modules/business-settings/business-settings.module';
@@ -15,7 +14,6 @@ import { SaleReturnsModule } from './modules/sale-returns/sale-returns.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
-import { OutboxModule } from './outbox/outbox.module';
 import { OpsModule } from './modules/ops/ops.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -24,8 +22,6 @@ import { PrismaModule } from './prisma/prisma.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
-    MongoModule,
-    OutboxModule,
     BusinessSettingsModule,
     ExchangeRatesModule,
     InventoryModule,
