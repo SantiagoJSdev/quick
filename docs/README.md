@@ -8,6 +8,8 @@
 | **Modelo de datos (tablas)** | **[DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md)** |
 | **Flutter / POS** | **[FRONTEND.md](./FRONTEND.md)** |
 | **Contratos HTTP** | [api/README.md](./api/README.md) |
+| **Imágenes producto (S3)** | [PRODUCT_IMAGES_S3_IMPLEMENTATION.md](./PRODUCT_IMAGES_S3_IMPLEMENTATION.md) |
+| **Deploy AWS (readiness)** | [AWS_DEPLOY_READINESS.md](./AWS_DEPLOY_READINESS.md) |
 
 ## Estructura mínima
 
@@ -18,6 +20,8 @@ docs/
   DATABASE_SCHEMA_GUIDE.md  ← tablas, relaciones, SQL útil
   FRONTEND.md               ← Flutter (único doc front)
   api/                      ← contratos HTTP (sync, compras, ops)
+  PRODUCT_IMAGES_S3_IMPLEMENTATION.md  ← plan S3 + PostgreSQL imágenes
+  AWS_DEPLOY_READINESS.md              ← checklist deploy EC2 + RDS
 ```
 
 Fuente técnica del esquema: `prisma/schema.prisma` + guía legible [DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md).

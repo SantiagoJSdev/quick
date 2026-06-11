@@ -61,4 +61,6 @@ Cada ítem permite **correlacionar con el POS** (mismo `opId` que el cliente rei
 
 ## Logs del scheduler
 
-El job **`OpsSchedulerService`** (intervalo por defecto **120 s**, configurable con **`OPS_SCHEDULER_ENABLED`**, **`OPS_SCHEDULER_INTERVAL_MS`**) emite **warnings** cuando hay desvíos de inventario o **sync fallidas**. En el caso de `failedCount > 0`, el log incluye un resumen JSON alineado con `failedSamples` (mismo criterio de correlación por `opId`).
+El job **`OpsSchedulerService`** (intervalo por defecto **120 s**, configurable con **`OPS_SCHEDULER_ENABLED`**, **`OPS_SCHEDULER_INTERVAL_MS`**) ejecuta reconciliación de inventario y lectura de métricas sync en background.
+
+**Logs periódicos (WARN):** solo cuando **`NODE_ENV !== production`** (desarrollo). En producción el job sigue corriendo pero **no** escribe WARN cada intervalo por sync fallidas o inventario — consulta este endpoint bajo demanda o configura alarmas externas.

@@ -50,12 +50,21 @@ export class OpsSchedulerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** WARN periódicos del job solo en desarrollo; prod consulta GET /ops/metrics bajo demanda. */
+  private shouldEmitPeriodicWarnLogs(): boolean {
+    return process.env.NODE_ENV !== 'production';
+  }
+
   private async tick(): Promise<void> {
     try {
       const [inv, sync] = await Promise.all([
         this.reconciliation.runInventoryCheck(),
         this.queues.getSyncMetrics(),
       ]);
+
+      if (!this.shouldEmitPeriodicWarnLogs()) {
+        return;
+      }
 
       if (inv.mismatchCount > 0) {
         this.logger.warn(
