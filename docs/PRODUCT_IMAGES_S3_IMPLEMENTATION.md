@@ -1,9 +1,12 @@
 # Product Images — Análisis e implementación (S3 + PostgreSQL)
 
-Plan de implementación paso a paso para migrar el flujo de imágenes de producto desde **disco local** hacia **S3 + metadatos en PostgreSQL**, siguiendo el enfoque modular del backend NestJS existente.
+Plan de implementación para **Fase 2** (después del deploy estable en EC2 + RDS). Migrar imágenes de producto desde **disco local** hacia **S3 + metadatos en PostgreSQL**.
 
-**Estado del documento:** planificación  
-**Última actualización:** 2026-06-09
+> **No empezar este plan todavía.** Alcance actual = **Fase 1 deploy** → [`AWS_DEPLOY_READINESS.md`](./AWS_DEPLOY_READINESS.md).  
+> En Fase 1 el POS sigue usando upload en disco (`POST /uploads/products-image`).
+
+**Estado del documento:** planificación — **pospuesto (Fase 2)**  
+**Última actualización:** 2026-06-10
 
 ---
 
