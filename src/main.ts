@@ -3,16 +3,29 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { PrismaService } from './prisma/prisma.service';
 
-async function bootstrap() {
-  const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
-  if (process.env.TRUST_PROXY === '1') {
-    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+function isProductionEnv(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+function isSwaggerEnabled(): boolean {
+  if (process.env.SWAGGER_ENABLED === '1') {
+    return true;
   }
-  app.setGlobalPrefix('api/v1');
-  app.useGlobalFilters(new ApiExceptionFilter());
+  if (process.env.SWAGGER_ENABLED === '0') {
+    return false;
+  }
+  return !isProductionEnv();
+}
 
+function nestLoggerLevels(): ('error' | 'warn' | 'log' | 'debug' | 'verbose')[] {
+  return isProductionEnv()
+    ? ['error', 'warn', 'log']
+    : ['error', 'warn', 'log', 'debug', 'verbose'];
+}
+
+function setupSwagger(app: Awaited<ReturnType<typeof NestFactory.create>>) {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Quick Market API')
     .setDescription(
@@ -58,6 +71,23 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document, {
     customSiteTitle: 'Quick Market API',
   });
+}
+
+async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+  const app = await NestFactory.create(AppModule, {
+    logger: nestLoggerLevels(),
+  });
+
+  if (process.env.TRUST_PROXY === '1') {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
+  app.setGlobalPrefix('api/v1');
+  app.useGlobalFilters(new ApiExceptionFilter());
+
+  if (isSwaggerEnabled()) {
+    setupSwagger(app);
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -66,12 +96,17 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  const prisma = app.get(PrismaService);
+  await prisma.enableShutdownHooks(app);
+
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
 
   const base = `http://127.0.0.1:${port}`;
+  const docsHint = isSwaggerEnabled() ? ` | docs ${base}/api/docs` : '';
   logger.log(
-    `[API_READY] Quick Market HTTP escuchando — base ${base} | API ${base}/api/v1 | docs ${base}/api/docs`,
+    `[API_READY] Quick Market HTTP escuchando — base ${base} | API ${base}/api/v1${docsHint}`,
   );
 }
 bootstrap();

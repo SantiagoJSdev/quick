@@ -46,6 +46,9 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Local product image uploads (dev disk driver)
+/storage
+
 # Runtime data
 pids
 *.pid
