@@ -2,8 +2,7 @@
 
 Plan de implementación para **Fase 2** (después del deploy estable en EC2 + RDS). Migrar imágenes de producto desde **disco local** hacia **S3 + metadatos en PostgreSQL**.
 
-> **No empezar este plan todavía.** Alcance actual = **Fase 1 deploy** → [`AWS_DEPLOY_READINESS.md`](./AWS_DEPLOY_READINESS.md).  
-> En Fase 1 el POS sigue usando upload en disco (`POST /uploads/products-image`).
+> **Fase 1 producción:** imágenes desactivadas vía `FEATURE_PRODUCT_IMAGES=0`. Este plan aplica al activar imágenes en **Fase 2**.
 
 **Estado del documento:** planificación — **pospuesto (Fase 2)**  
 **Última actualización:** 2026-06-10

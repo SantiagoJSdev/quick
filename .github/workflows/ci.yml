@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
 
 jobs:
   build-and-test:
@@ -19,7 +20,7 @@ jobs:
           POSTGRES_USER: openpg
           POSTGRES_PASSWORD: 123456
           POSTGRES_DB: backend_db
-        ports: ["5432:5432"]
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U openpg -d backend_db"
           --health-interval 10s
@@ -35,17 +36,15 @@ jobs:
         with:
           node-version: '20.19.0'
           registry-url: 'https://registry.npmjs.org'
-          
+
       - name: Check Node version
         run: node -v
 
       - name: Configure npm auth
+        if: env.NODE_AUTH_TOKEN != ''
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
           npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}" --location=project
-
-      - name: Check npm auth
-        run: npm whoami || echo "not authenticated"
 
       - name: Install dependencies
         run: npm ci
@@ -53,7 +52,13 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Run prisma connection test
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test -- --passWithNoTests
+
+      - name: Prisma connection test
         run: npx ts-node prisma/test-connection.ts
 
       - name: Remove npm auth

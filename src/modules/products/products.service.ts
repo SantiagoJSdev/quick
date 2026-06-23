@@ -15,6 +15,7 @@ import {
   requestBodySha256Hex,
   toJsonSafeForCache,
 } from '../../common/idempotency/request-body-hash';
+import { ProductImagesFeatureService } from '../../common/features/product-images-feature.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -51,6 +52,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    private readonly productImagesFeature: ProductImagesFeatureService,
   ) {}
 
   async create(dto: CreateProductDto, ctx: ProductStoreContext) {
@@ -204,6 +206,10 @@ export class ProductsService {
     dto: CreateProductDto,
     catalogStoreId: string,
   ): Promise<ProductWithRelations> {
+    if (dto.image !== undefined && dto.image !== null && dto.image.trim() !== '') {
+      this.productImagesFeature.assertEnabled();
+    }
+
     const skuFinal = await this.resolveCreateSku(tx, dto.sku);
     const barcodeVal = this.normalizeBarcodeInput(dto.barcode);
 
@@ -357,6 +363,10 @@ export class ProductsService {
         applySuggestedListPrice,
         ...rest
       } = dto;
+
+      if (image !== undefined) {
+        this.productImagesFeature.assertEnabled();
+      }
 
       const wantApply =
         applySuggestedListPrice === true || opts?.syncListPriceFromMargin === true;

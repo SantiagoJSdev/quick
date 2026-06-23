@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ProductImagesFeatureService } from '../../common/features/product-images-feature.service';
+import { ProductImagesEnabledGuard } from '../../common/guards/product-images-enabled.guard';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ProductImagesController } from './product-images.controller';
 import { ProductsController } from './products.controller';
@@ -12,7 +14,11 @@ import { ProductsService } from './products.service';
     ProductsWithStockController,
     ProductImagesController,
   ],
-  providers: [ProductsService],
+  providers: [
+    ProductsService,
+    ProductImagesFeatureService,
+    ProductImagesEnabledGuard,
+  ],
 })
 export class ProductsModule {}
 

@@ -12,10 +12,10 @@ Revisión tipo **senior backend** del estado actual del backend NestJS para desp
 
 | Fase | Qué incluye | Documento | Estado |
 |------|-------------|-----------|--------|
-| **Fase 1** | Deploy EC2 t4g.micro + RDS, seguridad, sync, imágenes **en disco local** (MVP actual) | **Este archivo** | **En curso** |
-| **Fase 2** | S3 + WebP + `product_images` + migración imágenes | [`PRODUCT_IMAGES_S3_IMPLEMENTATION.md`](./PRODUCT_IMAGES_S3_IMPLEMENTATION.md) | **Pospuesto** — no empezar hasta Fase 1 estable |
+| **Fase 1** | Deploy EC2 + RDS, seguridad, sync; **imágenes OFF** (`FEATURE_PRODUCT_IMAGES=0`) | **Este archivo** | **En curso** |
+| **Fase 2** | S3 + WebP + `product_images` + habilitar imágenes en prod | [`PRODUCT_IMAGES_S3_IMPLEMENTATION.md`](./PRODUCT_IMAGES_S3_IMPLEMENTATION.md) | **Pospuesto** |
 
-**En Fase 1 no se implementa:** bucket S3, IAM, `sharp`, tabla `ProductImage`, ni cambios al flujo de upload salvo lo ya existente (`POST /uploads/products-image` en disco).
+**En Fase 1 en producción:** endpoints de imágenes responden **503**; no forman parte del flujo validado de salida a AWS.
 
 ---
 
@@ -32,6 +32,8 @@ Revisión tipo **senior backend** del estado actual del backend NestJS para desp
 8. [Seguridad básica](#8-seguridad-básica)
 9. [Checklist de implementación](#9-checklist-de-implementación)
 10. [Orden recomendado de trabajo](#10-orden-recomendado-de-trabajo)
+11. [Política de ramas y GitHub Actions](#11-política-de-ramas-y-github-actions)
+12. [Imágenes — fuera de alcance Fase 1](#12-imágenes--fuera-de-alcance-fase-1)
 
 ---
 
@@ -54,7 +56,7 @@ Revisión tipo **senior backend** del estado actual del backend NestJS para desp
 > **Fase 1:** desplegar con bajo riesgo en EC2 + RDS.  
 > **Fase 2 (después):** imágenes S3 — ver plan aparte, no bloquea este deploy.
 
-Después de completar **P0 infra** (§9): **sí puedes desplegar** para un POS pequeño/mediano. Las imágenes siguen funcionando con el flujo **disco local** actual hasta Fase 2.
+Después de completar **P0 infra** (§9): **sí puedes desplegar** para un POS pequeño/mediano. **Imágenes de producto no forman parte del alcance operativo Fase 1** (ver §12).
 
 ---
 
@@ -453,7 +455,8 @@ Prioridad: **P0** bloqueante → **P1** post-deploy → **P2** mejoras (sin S3).
 - [x] **P0-10** Logger Nest explícito para prod (sin debug/verbose)
 - [ ] **P0-11** Security groups EC2 + RDS correctos
 - [ ] **P0-12** Limpiar sync ops `failed` de prueba en DB destino
-- [x] **P0-13** WARN periódicos ops scheduler solo en dev (`NODE_ENV !== production`)
+- [x] **P0-14** `FEATURE_PRODUCT_IMAGES=0` en build/deploy workflow
+- [x] **P0-15** GitHub Actions deploy solo en `main` (`.github/workflows/deploy-phase1.yml`)
 
 ### P1 — Primera semana post-deploy
 
@@ -494,7 +497,7 @@ Prioridad: **P0** bloqueante → **P1** post-deploy → **P2** mejoras (sin S3).
 ⏳ P1: HTTPS, Flutter sync, monitoreo
 ```
 
-**Imágenes en prod Fase 1:** flujo actual en **disco EC2** (`storage/products-images/`). Persistir volumen o aceptar que se pierden al recrear instancia; Fase 2 migra a S3.
+**Imágenes en prod Fase 1:** **desactivadas** (`FEATURE_PRODUCT_IMAGES=0`). Flutter no debe usar upload/serve hasta Fase 2.
 
 ### Fase 2 — Imágenes S3 (después)
 
@@ -520,10 +523,94 @@ DATABASE_URL=postgresql://user:pass@rds-endpoint:5432/quickmarket?schema=public&
 OPS_API_KEY=...
 DASHBOARD_ADMIN_PIN=...
 STORE_ONBOARDING_ENABLED=0
+FEATURE_PRODUCT_IMAGES=0
 TRUST_PROXY=1
 OPS_SCHEDULER_ENABLED=1
 OPS_SCHEDULER_INTERVAL_MS=300000
 ```
+
+---
+
+## 11. Política de ramas y GitHub Actions
+
+### Ramas
+
+| Rama | Uso | Deploy AWS Fase 1 |
+|------|-----|-------------------|
+| **`develop`** | Desarrollo e integración interna | **Prohibido** |
+| **`main`** | Única rama autorizada para producción | **Sí** |
+
+Flujo: merge `develop` → `main` solo cuando el release esté listo; el deploy corre **solo** en `main`.
+
+### Workflows (`.github/workflows/`)
+
+| Archivo | Trigger | Propósito |
+|---------|---------|-----------|
+| **`ci.yml`** | `push` / `PR` en `develop` y `main` | Build + tests (integración interna) |
+| **`deploy-phase1.yml`** | **`push` solo `main`** + `workflow_dispatch` | Gate de deploy; valida rama en job y paso deploy |
+
+Validaciones en `deploy-phase1.yml`:
+
+1. Trigger limitado a `branches: [main]`
+2. Job `assert-main-branch` falla si `github.ref != refs/heads/main`
+3. Job `deploy` con `if: github.ref == 'refs/heads/main'` + re-validación antes del paso deploy
+4. Build de release con `NODE_ENV=production` y `FEATURE_PRODUCT_IMAGES=0`
+
+El paso deploy a EC2 (SSH/SSM) se cablea cuando tengas host; el gate de rama ya está listo.
+
+### Checklist ramas / CI
+
+- [x] **GIT-1** `ci.yml` en `.github/workflows/` (develop + main)
+- [x] **GIT-2** `deploy-phase1.yml` solo `main` + assert branch
+- [ ] **GIT-3** Proteger `main` en GitHub (PR obligatorio, no push directo si aplica)
+- [ ] **GIT-4** Conectar deploy real a EC2 en `deploy-phase1.yml`
+- [ ] **GIT-5** Eliminar/migrar `workflows/ci.yml` legacy en raíz (hecho: movido a `.github`)
+
+---
+
+## 12. Imágenes — fuera de alcance Fase 1
+
+### Feature flag obligatoria
+
+```bash
+FEATURE_PRODUCT_IMAGES=0   # producción Fase 1 (obligatorio)
+```
+
+| Valor | Comportamiento |
+|-------|----------------|
+| `0` / `false` | Imágenes **no disponibles** — HTTP **503** |
+| `1` / `true` | Endpoints legacy activos (solo dev/staging) |
+| *(unset)* | Dev: ON; **production: OFF** (default seguro) |
+
+### Endpoints bloqueados cuando flag = 0
+
+- `POST /uploads/products-image`
+- `GET /uploads/products-image/:storeId/:fileName`
+- `PATCH /products/:id/image`
+- `DELETE /products/:id/image`
+- `PATCH /products/:id` o `POST /products` con campo `image`
+
+Implementación: `ProductImagesFeatureService` + `ProductImagesEnabledGuard` + validación en `ProductsService`.
+
+### Limitación operativa (disco EC2)
+
+Aunque exista carpeta `storage/products-images/` en la instancia, **no es alcance aprobado Fase 1** usarla en prod con la flag en 0.
+
+Persistencia si se usara en dev/staging:
+
+| Volumen | Comportamiento |
+|---------|----------------|
+| **Instance store** | Se pierde al terminar/reemplazar la instancia |
+| **EBS** | Persiste según `DeleteOnTermination` y lifecycle del volumen |
+
+Fase 2 migra a S3; no depender de disco local en producción.
+
+### Checklist imágenes Fase 1
+
+- [x] **IMG-1** `FEATURE_PRODUCT_IMAGES` implementado en código
+- [ ] **IMG-2** `FEATURE_PRODUCT_IMAGES=0` en `.env` EC2 producción
+- [ ] **IMG-3** Flutter: no llamar endpoints de imágenes en prod Fase 1
+- [ ] **IMG-4** Smoke test deploy: upload imagen → **503** esperado
 
 ---
 

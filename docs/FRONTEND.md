@@ -177,6 +177,8 @@ Guardar en UI local para ticket/impresión: `displayGrams`, precio/kg, importes.
 
 ## 8. Fotos de producto
 
+> **Fase 1 (prod AWS):** `FEATURE_PRODUCT_IMAGES=0` — no llamar estos endpoints; respuesta **503**. Ocultar UI de fotos hasta **Fase 2** (S3). En dev local: `FEATURE_PRODUCT_IMAGES=1` o omitir en non-production.
+
 | Paso | Método | Notas |
 |------|--------|--------|
 | Upload | `POST /uploads/products-image` | multipart campo `file`, máx 5MB, `image/*` |

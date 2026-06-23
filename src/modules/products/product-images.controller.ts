@@ -11,6 +11,7 @@ import {
   Req,
   Res,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import {
@@ -26,6 +27,7 @@ import { diskStorage } from 'multer';
 import { extname, join, resolve } from 'path';
 import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ProductImagesEnabledGuard } from '../../common/guards/product-images-enabled.guard';
 import { SkipStoreConfigured } from '../../common/metadata';
 import { ProductsService, type ProductStoreContext } from './products.service';
 
@@ -55,6 +57,7 @@ function extFromMimetype(mime: string): string {
   description: 'Store UUID (must exist with BusinessSettings)',
   required: true,
 })
+@UseGuards(ProductImagesEnabledGuard)
 @Controller()
 export class ProductImagesController {
   constructor(private readonly productsService: ProductsService) {}

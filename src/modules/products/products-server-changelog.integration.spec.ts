@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigModule } from '@nestjs/config';
 import type { BusinessSettings } from '@prisma/client';
 import { InventoryModule } from '../inventory/inventory.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProductImagesFeatureService } from '../../common/features/product-images-feature.service';
 import { ProductsService } from './products.service';
 
 const run = process.env.RUN_INTEGRATION === '1';
@@ -23,8 +25,8 @@ const integrationCtx = {
 
     beforeAll(async () => {
       moduleRef = await Test.createTestingModule({
-        imports: [PrismaModule, InventoryModule],
-        providers: [ProductsService],
+        imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, InventoryModule],
+        providers: [ProductsService, ProductImagesFeatureService],
       }).compile();
 
       products = moduleRef.get(ProductsService);

@@ -1,0 +1,89 @@
+# Fase 1 — único workflow autorizado para desplegar a AWS.
+# develop: integración interna (ver ci.yml). main: release a producción.
+
+name: Deploy Phase 1 (AWS)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-phase1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  assert-main-branch:
+    name: Validate branch (main only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-main ref
+        run: |
+          echo "github.ref=${{ github.ref }}"
+          echo "github.ref_name=${{ github.ref_name }}"
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Deploy Phase 1 is only allowed from branch main."
+            exit 1
+          fi
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "::error::github.ref_name must be main."
+            exit 1
+          fi
+
+  build:
+    name: Build & test (pre-deploy)
+    needs: assert-main-branch
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      FEATURE_PRODUCT_IMAGES: '0'
+      DATABASE_URL: postgresql://openpg:123456@localhost:5432/backend_db?schema=public
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: openpg
+          POSTGRES_PASSWORD: 123456
+          POSTGRES_DB: backend_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U openpg -d backend_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run build
+      - run: npm test -- --passWithNoTests
+
+  deploy:
+    name: Deploy to EC2 (main only)
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Validate branch before deploy
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ] || [ "${{ github.ref_name }}" != "main" ]; then
+            echo "::error::Deploy aborted: not on main."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Deploy placeholder
+        run: |
+          echo "Phase 1 deploy gate passed on main."
+          echo "Wire EC2 deploy here (SSH/SSM): git pull, npm ci, prisma migrate deploy, pm2 restart."
+          echo "Required prod env: NODE_ENV=production FEATURE_PRODUCT_IMAGES=0"
