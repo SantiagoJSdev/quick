@@ -39,7 +39,7 @@ Anotar:
 | **Branch** | `main` |
 | **Root Directory** | vacío si el repo **es** la carpeta `backend`; si el repo es monorepo, poner `backend` |
 | **Runtime** | Node |
-| **Build Command** | `npm ci && npx prisma generate && npm run build` |
+| **Build Command** | `npm ci --include=dev && npx prisma generate && npm run build` |
 | **Start Command** | `npm run start:prod` |
 | **Plan** | Free |
 
