@@ -34,6 +34,7 @@ Revisión tipo **senior backend** del estado actual del backend NestJS para desp
 10. [Orden recomendado de trabajo](#10-orden-recomendado-de-trabajo)
 11. [Política de ramas y GitHub Actions](#11-política-de-ramas-y-github-actions)
 12. [Imágenes — fuera de alcance Fase 1](#12-imágenes--fuera-de-alcance-fase-1)
+13. [Runbook operativo](#13-runbook-operativo)
 
 ---
 
@@ -614,6 +615,14 @@ Fase 2 migra a S3; no depender de disco local en producción.
 
 ---
 
+## 13. Runbook operativo
+
+Guía detallada **desde crear cuenta AWS** hasta smoke tests:
+
+→ **[AWS_PHASE1_RUNBOOK.md](./AWS_PHASE1_RUNBOOK.md)**
+
+---
+
 ## Referencias
 
 | Doc | Tema |
@@ -625,4 +634,4 @@ Fase 2 migra a S3; no depender de disco local en producción.
 
 ---
 
-**Próximo paso (Fase 1):** completar **P0-1 … P0-4, P0-7, P0-8, P0-11, P0-12** — infra AWS (RDS, EC2, `.env` prod, PM2). **No iniciar S3 / imágenes** hasta Fase 2.
+**Próximo paso (Fase 1):** seguir [`AWS_PHASE1_RUNBOOK.md`](./AWS_PHASE1_RUNBOOK.md) desde **A — Cuenta AWS**. Código P0 del repo ya está listo; falta infra + deploy en EC2.

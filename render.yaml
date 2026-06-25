@@ -1,0 +1,36 @@
+# Blueprint Render — Quick Market API (Fase 1 Plan B: Neon + Render)
+# https://render.com/docs/blueprint-spec
+#
+# Uso: Dashboard Render → New → Blueprint → conectar repo → pegar DATABASE_URL en el servicio.
+# O crear Web Service manualmente con los mismos build/start/preDeploy.
+
+services:
+  - type: web
+    name: quickmarket-api
+    runtime: node
+    plan: free
+    region: ohio
+    branch: main
+    buildCommand: npm ci && npx prisma generate && npm run build
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: npm run start:prod
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FEATURE_PRODUCT_IMAGES
+        value: '0'
+      - key: STORE_ONBOARDING_ENABLED
+        value: '0'
+      - key: OPS_SCHEDULER_ENABLED
+        value: '0'
+      - key: TRUST_PROXY
+        value: '1'
+      - key: SWAGGER_ENABLED
+        value: '0'
+      - key: DATABASE_URL
+        sync: false
+      - key: OPS_API_KEY
+        sync: false
+      - key: DASHBOARD_ADMIN_PIN
+        sync: false
