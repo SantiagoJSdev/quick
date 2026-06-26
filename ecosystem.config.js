@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'quickmarket-api',
       cwd: __dirname,
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       instances: 1,
       autorestart: true,
       max_memory_restart: '400M',
