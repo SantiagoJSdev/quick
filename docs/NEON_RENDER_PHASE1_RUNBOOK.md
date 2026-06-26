@@ -49,7 +49,7 @@ Anotar:
 npx prisma migrate deploy
 ```
 
-5. **Health Check Path**: `/`
+5. **Health Check Path**: `/health` (no uses `/` — el prefijo `api/v1` complica la raíz en deploys viejos)
 
 6. **Environment Variables** (Environment → Add):
 

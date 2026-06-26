@@ -102,6 +102,11 @@ async function bootstrap() {
   const prisma = app.get(PrismaService);
   await prisma.enableShutdownHooks(app);
 
+  // Render health check — ruta fija fuera del prefijo api/v1
+  app.getHttpAdapter().getInstance().get('/health', (_req, res) => {
+    res.status(200).send('ok');
+  });
+
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
 
