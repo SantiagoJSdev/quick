@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -82,7 +82,9 @@ async function bootstrap() {
   if (process.env.TRUST_PROXY === '1') {
     app.getHttpAdapter().getInstance().set('trust proxy', 1);
   }
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: '/', method: RequestMethod.GET }],
+  });
   app.useGlobalFilters(new ApiExceptionFilter());
 
   if (isSwaggerEnabled()) {
@@ -101,7 +103,7 @@ async function bootstrap() {
   await prisma.enableShutdownHooks(app);
 
   const port = Number(process.env.PORT ?? 3000);
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   const base = `http://127.0.0.1:${port}`;
   const docsHint = isSwaggerEnabled() ? ` | docs ${base}/api/docs` : '';
