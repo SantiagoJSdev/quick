@@ -137,6 +137,15 @@ export class CreateSaleDto {
   @IsUUID('4')
   opId?: string;
 
+  @ApiPropertyOptional({
+    example: 'POS_SYNC',
+    description: 'Origen de la venta: POS_SYNC | POS_REST | API',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  saleOrigin?: string;
+
   @ApiPropertyOptional({ type: FxSnapshotDto })
   @IsOptional()
   @ValidateNested()

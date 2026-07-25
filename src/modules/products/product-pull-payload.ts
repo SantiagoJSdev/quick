@@ -19,6 +19,7 @@ export function productToSyncPullFields(product: {
   unit: string;
   supplierId: string | null;
   active: boolean;
+  blockSaleWithoutStock?: boolean;
 }): Record<string, unknown> {
   return {
     sku: product.sku,
@@ -37,6 +38,7 @@ export function productToSyncPullFields(product: {
     unit: product.unit,
     supplierId: product.supplierId,
     active: product.active,
+    blockSaleWithoutStock: product.blockSaleWithoutStock ?? false,
   };
 }
 
@@ -59,6 +61,7 @@ export function productSyncPullPayload(product: {
   unit: string;
   supplierId: string | null;
   active: boolean;
+  blockSaleWithoutStock?: boolean;
 }): { productId: string; fields: Record<string, unknown> } {
   return {
     productId: product.id,

@@ -33,12 +33,21 @@ export type SyncPushAckedSupplier = {
   supplierId: string;
 };
 
+export type SyncPushWarning = {
+  code: string;
+  productId?: string;
+  message: string;
+  availableBefore?: string;
+  quantityAfter?: string;
+};
+
 export type SyncPushResult = {
   serverTime: string;
   acked: {
     opId: string;
     serverVersion: number;
     supplier?: SyncPushAckedSupplier;
+    warnings?: SyncPushWarning[];
   }[];
   skipped: { opId: string; reason: string }[];
   failed: { opId: string; reason: string; details?: string }[];
@@ -789,10 +798,48 @@ export class SyncService {
         ...remote.dto,
         opId: op.opId,
         deviceId: remote.dto.deviceId ?? deviceId,
+        saleOrigin: remote.dto.saleOrigin ?? 'POS_SYNC',
       };
 
+      // Idempotencia por sale.id antes de create (otro opId, mismo ticket).
+      const existingSale = await tx.sale.findFirst({
+        where: { id: saleDto.id!, storeId },
+        select: { id: true },
+      });
+      if (existingSale) {
+        const { serverVersion } = await tx.storeSyncState.update({
+          where: { storeId },
+          data: { serverVersion: { increment: 1 } },
+          select: { serverVersion: true },
+        });
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'applied',
+            serverVersion,
+            serverAppliedAt: new Date(),
+          },
+        });
+        buckets.skipped.push({
+          opId: op.opId,
+          reason: 'sale_already_exists',
+        });
+        this.logger.debug(
+          `sync/push: SALE ${op.opId} -> skipped sale_already_exists`,
+        );
+        return;
+      }
+
+      let saleResult: Awaited<ReturnType<SalesService['createSaleTx']>>;
       try {
-        await this.sales.createSaleTx(tx, storeId, saleDto, fx);
+        saleResult = await this.sales.createSaleTx(tx, storeId, saleDto, fx, {
+          saleOrigin: 'POS_SYNC',
+        });
       } catch (err) {
         if (
           err instanceof BadRequestException ||
@@ -819,6 +866,33 @@ export class SyncService {
         throw err;
       }
 
+      // createSaleTx puede devolver alreadyExisted si hubo carrera; tratar igual.
+      if (saleResult.alreadyExisted) {
+        const { serverVersion } = await tx.storeSyncState.update({
+          where: { storeId },
+          data: { serverVersion: { increment: 1 } },
+          select: { serverVersion: true },
+        });
+        await tx.syncOperation.create({
+          data: {
+            opId: op.opId,
+            storeId,
+            deviceId,
+            opType: op.opType,
+            payload: op.payload as Prisma.InputJsonValue,
+            clientTimestamp: clientTs,
+            status: 'applied',
+            serverVersion,
+            serverAppliedAt: new Date(),
+          },
+        });
+        buckets.skipped.push({
+          opId: op.opId,
+          reason: 'sale_already_exists',
+        });
+        return;
+      }
+
       const { serverVersion } = await tx.storeSyncState.update({
         where: { storeId },
         data: { serverVersion: { increment: 1 } },
@@ -839,7 +913,12 @@ export class SyncService {
         },
       });
 
-      buckets.acked.push({ opId: op.opId, serverVersion });
+      buckets.acked.push({
+        opId: op.opId,
+        serverVersion,
+        warnings:
+          saleResult.warnings?.length > 0 ? saleResult.warnings : undefined,
+      });
       this.logger.debug(`sync/push: SALE ${op.opId} -> acked`);
       return;
     }

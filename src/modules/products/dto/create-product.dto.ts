@@ -99,5 +99,13 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Si true, no se permite vender sin stock aunque la tienda permita negativo.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  blockSaleWithoutStock?: boolean;
 }
 

@@ -87,6 +87,14 @@ export class UpdateProductDto {
 
   @ApiPropertyOptional({
     description:
+      'Si true, no se permite vender sin stock aunque la tienda permita negativo.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  blockSaleWithoutStock?: boolean;
+
+  @ApiPropertyOptional({
+    description:
       'Si es true: tras aplicar el resto del body, persiste `price` igual al `suggestedPrice` M7 (mismo cálculo que en la respuesta), salvo `MANUAL_PRICE` o costo/margen que no permitan sugerido — en ese caso el flag se ignora. No combinar con `price` en el mismo request.',
   })
   @IsOptional()

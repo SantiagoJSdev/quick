@@ -61,7 +61,7 @@ export class SalesService {
     );
 
     return this.prisma.$transaction((tx) =>
-      this.createSaleTx(tx, storeId, dto, fx),
+      this.createSaleTx(tx, storeId, dto, fx, { saleOrigin: 'POS_REST' }),
     );
   }
 
@@ -73,6 +73,7 @@ export class SalesService {
     storeId: string,
     dto: CreateSaleDto,
     fx: ResolvedFxSnapshot,
+    opts?: { saleOrigin?: string },
   ) {
     const settings = await tx.businessSettings.findUnique({
       where: { storeId },
@@ -93,6 +94,13 @@ export class SalesService {
     ).toUpperCase();
 
     const saleId = dto.id ?? randomUUID();
+    const warnings: Array<{
+      code: string;
+      productId?: string;
+      message: string;
+      availableBefore?: string;
+      quantityAfter?: string;
+    }> = [];
 
     if (dto.id) {
       const existing = await tx.sale.findFirst({
@@ -107,7 +115,11 @@ export class SalesService {
           where: { saleId: sale.id },
           orderBy: { createdAt: 'asc' },
         });
-        return this.attachPaymentSummary({ ...sale, payments });
+        return {
+          ...this.attachPaymentSummary({ ...sale, payments }),
+          warnings: [],
+          alreadyExisted: true as const,
+        };
       }
     }
 
@@ -122,15 +134,24 @@ export class SalesService {
     const lineCreates: Prisma.SaleLineCreateWithoutSaleInput[] = [];
     let totalDoc = new Prisma.Decimal(0);
     let totalFunc = new Prisma.Decimal(0);
+    let anyStockConflict = false;
+    const allowNegative = settings.allowNegativeStockAtPos ?? true;
+    const warnOnNegative = settings.warnOnNegativeStock ?? true;
 
     for (const line of dto.lines) {
       const product = await tx.product.findUnique({
         where: { id: line.productId },
       });
-      if (!product || !product.active) {
-        throw new BadRequestException(
-          `Product ${line.productId} not found or inactive`,
-        );
+      if (!product) {
+        throw new BadRequestException(`Product ${line.productId} not found`);
+      }
+      // B1: permitir cobro de carrito abierto aunque el producto esté inactivo.
+      if (!product.active) {
+        warnings.push({
+          code: 'PRODUCT_INACTIVE',
+          productId: line.productId,
+          message: 'Product is inactive; sale line accepted for POS cart continuity',
+        });
       }
 
       const qty = new Prisma.Decimal(line.quantity);
@@ -169,7 +190,7 @@ export class SalesService {
           ? `${dto.opId}:${line.productId}`
           : null;
 
-      await this.inventory.applyOutSaleLineTx(tx, {
+      const out = await this.inventory.applyOutSaleLineTx(tx, {
         storeId,
         productId: line.productId,
         quantity: qty,
@@ -177,6 +198,19 @@ export class SalesService {
         opId: movementOpId,
         priceAtMomentDocument: price,
       });
+
+      if (out.stockConflict) {
+        anyStockConflict = true;
+        if (warnOnNegative) {
+          warnings.push({
+            code: 'STOCK_NEGATIVE',
+            productId: line.productId,
+            message: 'Sale applied; inventory went negative or was insufficient',
+            availableBefore: out.availableBefore,
+            quantityAfter: out.quantityAfter,
+          });
+        }
+      }
 
       lineCreates.push({
         product: { connect: { id: line.productId } },
@@ -212,6 +246,11 @@ export class SalesService {
       );
     }
 
+    const inventoryValidationMode = allowNegative
+      ? 'ALLOW_NEGATIVE'
+      : 'STRICT';
+    const saleOrigin = opts?.saleOrigin ?? dto.saleOrigin ?? null;
+
     const sale = await tx.sale.create({
       data: {
         id: saleId,
@@ -229,6 +268,9 @@ export class SalesService {
         fxSource: fx.fxSource,
         totalDocument: totalDoc,
         totalFunctional: totalFunc,
+        inventoryValidationMode,
+        stockConflictDetected: anyStockConflict,
+        saleOrigin,
         saleLines: { create: lineCreates },
       },
       include: { saleLines: true },
@@ -258,7 +300,11 @@ export class SalesService {
         })
       : [];
 
-    return this.attachPaymentSummary({ ...sale, payments });
+    return {
+      ...this.attachPaymentSummary({ ...sale, payments }),
+      warnings,
+      alreadyExisted: false as const,
+    };
   }
 
   async findOne(storeId: string, saleId: string) {

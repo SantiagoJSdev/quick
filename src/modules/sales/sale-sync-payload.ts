@@ -173,7 +173,28 @@ export function parseSalePayload(
     appVersion: typeof s.appVersion === 'string' ? s.appVersion : undefined,
     fxSnapshot,
     payments: payments.length > 0 ? payments : undefined,
+    saleOrigin: typeof s.saleOrigin === 'string' ? s.saleOrigin : undefined,
   };
+
+  if (typeof s.id !== 'string' || s.id.trim() === '') {
+    return {
+      ok: false,
+      details:
+        'sale.id is required (UUID string). Use a stable client-generated ticket id for idempotency — never omit or regenerate it on retry.',
+    };
+  }
+
+  // UUID v4 shape (same family as CreateSaleDto)
+  const uuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(s.id.trim())) {
+    return {
+      ok: false,
+      details: 'sale.id must be a valid UUID',
+    };
+  }
+
+  dto.id = s.id.trim();
 
   return { ok: true, data: { storeId: s.storeId, dto } };
 }

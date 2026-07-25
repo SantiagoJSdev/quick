@@ -90,6 +90,15 @@ model BusinessSettings {
   /// Margen comercial por defecto de la tienda (%), ej. 15.00 = 15%. Null = no configurado (UI puede usar lógica local hasta M7 completo).
   defaultMarginPercent     Decimal?  @db.Decimal(10, 4)
 
+  /// POS: permitir OUT_SALE aunque available < qty (stock puede quedar negativo).
+  allowNegativeStockAtPos Boolean @default(true)
+  /// Si hubo conflicto de stock permitido, marcar venta / devolver warnings.
+  warnOnNegativeStock Boolean @default(true)
+  /// Productos con blockSaleWithoutStock: sin stock → rechazo.
+  blockRestrictedProductsWithoutStock Boolean @default(true)
+  /// Cierre de caja: preferir sync exitoso (soft en B2).
+  requireSuccessfulSyncAtClose Boolean @default(false)
+
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 }
@@ -149,6 +158,8 @@ model Product {
   purchaseLines  PurchaseLine[]
 
   active         Boolean    @default(true)
+  /// Si true: sin stock suficiente → rechazo aunque la tienda permita negativo.
+  blockSaleWithoutStock Boolean @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
@@ -391,6 +402,13 @@ model Sale {
   fxSource               String?
   totalDocument          Decimal?   @db.Decimal(65, 30)
   totalFunctional        Decimal?   @db.Decimal(65, 30)
+
+  /// STRICT | ALLOW_NEGATIVE — modo efectivo al confirmar la venta.
+  inventoryValidationMode String?
+  /// Alguna línea aplicó OUT_SALE con available insuficiente (política permitió negativo).
+  stockConflictDetected   Boolean @default(false)
+  /// POS_SYNC | POS_REST | API
+  saleOrigin              String?
 
   saleLines   SaleLine[]
   payments    SalePayment[]

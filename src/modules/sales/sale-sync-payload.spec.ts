@@ -2,6 +2,7 @@ import { parseSalePayload } from './sale-sync-payload';
 
 describe('parseSalePayload', () => {
   const minimalSale = {
+    id: '30000000-0000-4000-8000-000000000003',
     storeId: '10000000-0000-4000-8000-000000000001',
     lines: [
       {
@@ -17,7 +18,17 @@ describe('parseSalePayload', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.data.storeId).toBe(minimalSale.storeId);
+      expect(r.data.dto.id).toBe(minimalSale.id);
       expect(r.data.dto.lines).toHaveLength(1);
+    }
+  });
+
+  it('rejects missing sale.id', () => {
+    const { id: _id, ...withoutId } = minimalSale;
+    const r = parseSalePayload({ sale: withoutId });
+    expect(r.ok).toBe(false);
+    if (r.ok === false) {
+      expect(r.details).toContain('sale.id is required');
     }
   });
 

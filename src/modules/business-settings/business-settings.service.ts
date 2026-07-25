@@ -56,27 +56,45 @@ export class BusinessSettingsService {
   }
 
   /**
-   * Actualización parcial (M7). Hoy: `defaultMarginPercent` (% tienda).
+   * Actualización parcial (M7 + política stock POS).
    */
   async patch(storeId: string, dto: PatchBusinessSettingsDto) {
     await this.findByStoreId(storeId);
 
-    if (dto.defaultMarginPercent === undefined) {
-      throw new BadRequestException(
-        'Provide at least defaultMarginPercent to update',
-      );
+    const data: Prisma.BusinessSettingsUpdateInput = {};
+
+    if (dto.defaultMarginPercent !== undefined) {
+      const d = new Prisma.Decimal(dto.defaultMarginPercent);
+      if (!d.isFinite() || d.lt(0) || d.gt(999)) {
+        throw new BadRequestException(
+          'defaultMarginPercent must be a decimal between 0 and 999',
+        );
+      }
+      data.defaultMarginPercent = d;
+    }
+    if (dto.allowNegativeStockAtPos !== undefined) {
+      data.allowNegativeStockAtPos = dto.allowNegativeStockAtPos;
+    }
+    if (dto.warnOnNegativeStock !== undefined) {
+      data.warnOnNegativeStock = dto.warnOnNegativeStock;
+    }
+    if (dto.blockRestrictedProductsWithoutStock !== undefined) {
+      data.blockRestrictedProductsWithoutStock =
+        dto.blockRestrictedProductsWithoutStock;
+    }
+    if (dto.requireSuccessfulSyncAtClose !== undefined) {
+      data.requireSuccessfulSyncAtClose = dto.requireSuccessfulSyncAtClose;
     }
 
-    const d = new Prisma.Decimal(dto.defaultMarginPercent);
-    if (!d.isFinite() || d.lt(0) || d.gt(999)) {
+    if (Object.keys(data).length === 0) {
       throw new BadRequestException(
-        'defaultMarginPercent must be a decimal between 0 and 999',
+        'Provide at least one field to update (defaultMarginPercent or stock policy flags)',
       );
     }
 
     await this.prisma.businessSettings.update({
       where: { storeId },
-      data: { defaultMarginPercent: d },
+      data,
     });
 
     return this.findByStoreId(storeId);
