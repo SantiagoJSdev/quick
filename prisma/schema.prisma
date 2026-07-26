@@ -329,6 +329,7 @@ model Store {
   syncOperations   SyncOperation[]
   suppliers        Supplier[]
   idempotencyRecords IdempotencyRecord[]
+  cashSessions     CashSession[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -378,6 +379,7 @@ model POSDevice {
 
   sales      Sale[]
   syncOps    SyncOperation[]
+  cashSessions CashSession[]
 }
 
 model Sale {
@@ -531,5 +533,47 @@ model ServerChangeLog {
   storeScopeId  String?
 
   @@index([storeScopeId])
+}
+
+/// Turno / cierre de caja POS (B2). Una sesión OPEN por (storeId, deviceId).
+model CashSession {
+  id       String @id @default(uuid())
+  storeId  String
+  store    Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  /// Mismo `deviceId` de sync/ventas (no el UUID fila POSDevice.id).
+  deviceId String
+  posDevice POSDevice @relation(fields: [deviceId], references: [deviceId])
+
+  status   String @default("OPEN") // OPEN | CLOSED
+  openedAt DateTime @default(now())
+  closedAt DateTime?
+
+  /// Efectivo declarado al abrir (opcional).
+  openingCash Decimal? @db.Decimal(65, 30)
+  /// Efectivo contado al cerrar.
+  countedCash Decimal? @db.Decimal(65, 30)
+  /// ONLINE | OFFLINE — cómo cerró el cliente.
+  closeMode   String?
+  notes       String?
+
+  /// Snapshot declarado por el POS al cerrar (tickets aún en cola local).
+  pendingSalesJson Json?
+  pendingCount     Int @default(0)
+
+  /// Totales congelados al cierre (null mientras OPEN; summary live los calcula).
+  ticketsCount              Int?
+  salesTotalFunctional      Decimal? @db.Decimal(65, 30)
+  returnsTotalFunctional    Decimal? @db.Decimal(65, 30)
+  stockConflictSalesCount   Int?
+  negativeSkuCount          Int?
+  syncFailedCount           Int?
+  /// Warnings de cierre (ej. pendientes con requireSuccessfulSyncAtClose).
+  closeWarningsJson         Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeId, deviceId, status])
+  @@index([storeId, openedAt])
 }
 
