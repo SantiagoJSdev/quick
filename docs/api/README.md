@@ -8,6 +8,7 @@
 | [PURCHASES.md](./PURCHASES.md) | Compras REST + sync `PURCHASE_RECEIVE` |
 | [SYNC_PUSH_SALE.md](./SYNC_PUSH_SALE.md) | Sync ventas `SALE` |
 | [SYNC_PUSH_SUPPLIERS.md](./SYNC_PUSH_SUPPLIERS.md) | Sync proveedores |
+| [CASH_SESSIONS.md](./CASH_SESSIONS.md) | Cierre de caja `cash-sessions` (B2) |
 
 Dashboard y resto de integración Flutter: **[../FRONTEND.md](../FRONTEND.md)** §10.
 

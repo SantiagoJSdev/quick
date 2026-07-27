@@ -24,6 +24,29 @@ export class SyncAckedItemDto {
       'Presente en ack de `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, `SUPPLIER_DEACTIVATE`.',
   })
   supplier?: SyncAckedSupplierDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Advertencias no bloqueantes (ej. STOCK_NEGATIVE, PRODUCT_INACTIVE) en SALE.',
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        code: { type: 'string' },
+        productId: { type: 'string' },
+        message: { type: 'string' },
+        availableBefore: { type: 'string' },
+        quantityAfter: { type: 'string' },
+      },
+    },
+  })
+  warnings?: Array<{
+    code: string;
+    productId?: string;
+    message: string;
+    availableBefore?: string;
+    quantityAfter?: string;
+  }>;
 }
 
 export class SyncSkippedItemDto {

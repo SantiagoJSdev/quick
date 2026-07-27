@@ -12,6 +12,8 @@
 | **Runbook AWS paso a paso** | [AWS_PHASE1_RUNBOOK.md](./AWS_PHASE1_RUNBOOK.md) |
 | **Plan B sin AWS (Neon + Render)** | **[NEON_RENDER_PHASE1_RUNBOOK.md](./NEON_RENDER_PHASE1_RUNBOOK.md)** ← empezar aquí |
 | **Imágenes S3 (Fase 2 — después)** | [PRODUCT_IMAGES_S3_IMPLEMENTATION.md](./PRODUCT_IMAGES_S3_IMPLEMENTATION.md) |
+| **Stock negativo POS (backend)** | **[POS_NEGATIVE_STOCK_BACKEND_IMPLEMENTATION.md](./POS_NEGATIVE_STOCK_BACKEND_IMPLEMENTATION.md)** |
+| **Stock negativo POS (Flutter)** | [POS_NEGATIVE_STOCK_FRONTEND_IMPLEMENTATION.md](./POS_NEGATIVE_STOCK_FRONTEND_IMPLEMENTATION.md) |
 
 ## Estructura mínima
 
@@ -26,6 +28,8 @@ docs/
   AWS_PHASE1_RUNBOOK.md                ← Fase 1 AWS (cuando haya cuenta/tarjeta)
   NEON_RENDER_PHASE1_RUNBOOK.md        ← Fase 1 Plan B: Neon + Render (OPERATIVO)
   PRODUCT_IMAGES_S3_IMPLEMENTATION.md  ← Fase 2: plan S3 imágenes (DESPUÉS)
+  POS_NEGATIVE_STOCK_BACKEND_IMPLEMENTATION.md   ← venta con stock negativo (backend)
+  POS_NEGATIVE_STOCK_FRONTEND_IMPLEMENTATION.md  ← sugerencia Flutter (mismo epic)
 ```
 
 Fuente técnica del esquema: `prisma/schema.prisma` + guía legible [DATABASE_SCHEMA_GUIDE.md](./DATABASE_SCHEMA_GUIDE.md).

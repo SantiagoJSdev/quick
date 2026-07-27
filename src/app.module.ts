@@ -16,6 +16,7 @@ import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import { OpsModule } from './modules/ops/ops.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { CashSessionModule } from './modules/cash-session/cash-session.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { PrismaModule } from './prisma/prisma.module';
     SyncModule,
     OpsModule,
     ReportsModule,
+    CashSessionModule,
   ],
   controllers: [AppController],
   providers: [

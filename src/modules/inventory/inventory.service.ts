@@ -208,6 +208,7 @@ export class InventoryService {
   /**
    * Salida por venta (`OUT_SALE`). Costo al costo medio funcional actual; no repricing.
    * `opId` opcional (p. ej. `${syncOpId}:${productId}`) para idempotencia.
+   * Si la política de tienda lo permite, el stock puede quedar negativo.
    */
   async applyOutSaleLineTx(
     tx: Prisma.TransactionClient,
@@ -218,8 +219,15 @@ export class InventoryService {
       saleId: string;
       opId?: string | null;
       priceAtMomentDocument?: Prisma.Decimal | null;
+      /** Override: si false, siempre strict. Si omitido, lee BusinessSettings + Product. */
+      allowNegativeStock?: boolean;
     },
-  ): Promise<{ movementId: string }> {
+  ): Promise<{
+    movementId: string;
+    stockConflict: boolean;
+    availableBefore: string;
+    quantityAfter: string;
+  }> {
     const { storeId, productId, quantity: qtyMag, saleId } = params;
     if (!qtyMag.isFinite() || qtyMag.lte(0)) {
       throw new BadRequestException('Invalid sale line quantity');
@@ -235,7 +243,15 @@ export class InventoryService {
             'opId already used for another movement',
           );
         }
-        return { movementId: dup.id };
+        const itemAfter = await tx.inventoryItem.findUnique({
+          where: { productId_storeId: { productId, storeId } },
+        });
+        return {
+          movementId: dup.id,
+          stockConflict: false,
+          availableBefore: '0',
+          quantityAfter: itemAfter?.quantity.toString() ?? '0',
+        };
       }
     }
 
@@ -243,6 +259,20 @@ export class InventoryService {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
+
+    const settings = await tx.businessSettings.findUnique({
+      where: { storeId },
+    });
+
+    const storeAllows =
+      params.allowNegativeStock !== undefined
+        ? params.allowNegativeStock
+        : (settings?.allowNegativeStockAtPos ?? true);
+    const blockRestricted =
+      settings?.blockRestrictedProductsWithoutStock ?? true;
+    const productBlocks = product.blockSaleWithoutStock === true;
+    const effectiveAllowNegative =
+      storeAllows && !(blockRestricted && productBlocks);
 
     let item = await tx.inventoryItem.findUnique({
       where: { productId_storeId: { productId, storeId } },
@@ -263,18 +293,18 @@ export class InventoryService {
     }
 
     const available = item.quantity.minus(item.reserved);
-    if (available.lt(qtyMag)) {
+    const stockConflict = available.lt(qtyMag);
+    if (stockConflict && !effectiveAllowNegative) {
       throw new BadRequestException(
         'Insufficient stock (quantity minus reserved)',
       );
     }
 
-    const avg = item.quantity.gt(0)
-      ? item.averageUnitCostFunctional
-      : new Prisma.Decimal(0);
+    // Conservar último costo medio aunque quantity <= 0 (ventas en negativo).
+    const avg = item.averageUnitCostFunctional;
     const newQty = item.quantity.minus(qtyMag);
     const newTotal = avg.mul(newQty);
-    const newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
+    const newAvg = avg;
     const totalCostForMove = avg.mul(qtyMag);
 
     const movement = await tx.stockMovement.create({
@@ -302,7 +332,12 @@ export class InventoryService {
       },
     });
 
-    return { movementId: movement.id };
+    return {
+      movementId: movement.id,
+      stockConflict,
+      availableBefore: available.toString(),
+      quantityAfter: newQty.toString(),
+    };
   }
 
   /**

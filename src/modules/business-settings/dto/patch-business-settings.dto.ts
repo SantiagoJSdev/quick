@@ -1,14 +1,50 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumberString, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsNumberString,
+  IsOptional,
+  MaxLength,
+} from 'class-validator';
 
 export class PatchBusinessSettingsDto {
   @ApiPropertyOptional({
     example: '15',
     description:
-      'Margen por defecto de la tienda en porcentaje (ej. "15" = 15%). Rango 0–999. Enviar null vía JSON `null` no está soportado en este DTO; use PATCH con valor explícito. Para quitar margen: documentar en siguiente iteración o usar valor "0".',
+      'Margen por defecto de la tienda en porcentaje (ej. "15" = 15%). Rango 0–999.',
   })
   @IsOptional()
   @IsNumberString()
   @MaxLength(20)
   defaultMarginPercent?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Permitir ventas POS aunque el stock quede negativo (default true).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowNegativeStockAtPos?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Emitir warnings / marcar Sale cuando hay conflicto de stock.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  warnOnNegativeStock?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Si true, productos con blockSaleWithoutStock rechazan venta sin stock.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  blockRestrictedProductsWithoutStock?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Cierre de caja: preferir sync exitoso (soft warning en summary).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requireSuccessfulSyncAtClose?: boolean;
 }
