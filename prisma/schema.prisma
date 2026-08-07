@@ -285,10 +285,25 @@ model Purchase {
   /// Número de factura, nota de entrega u otra referencia del documento del proveedor.
   supplierInvoiceReference String?
 
+  /// PAID | CREDIT | PARTIAL — control de deuda con el proveedor.
+  paymentStatus          String    @default("PAID")
+  /// Monto ya abonado (moneda funcional).
+  amountPaidFunctional   Decimal   @default(0) @db.Decimal(65, 30)
+  /// Saldo pendiente (moneda funcional).
+  amountDueFunctional    Decimal   @default(0) @db.Decimal(65, 30)
+  /// Vencimiento si es crédito.
+  dueDate                DateTime? @db.Date
+  paidAt                 DateTime?
+
   lines        PurchaseLine[]
+  payments     PurchasePayment[]
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([storeId, createdAt])
+  @@index([storeId, paymentStatus])
+  @@index([storeId, supplierId, paymentStatus])
 }
 
 model PurchaseLine {
@@ -307,6 +322,27 @@ model PurchaseLine {
   unitCostFunctional   Decimal? @db.Decimal(65, 30)
   lineTotalDocument    Decimal? @db.Decimal(65, 30)
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+}
+
+/// Abono a una factura de compra (cuenta por pagar).
+model PurchasePayment {
+  id               String   @id @default(uuid())
+  purchaseId       String
+  purchase         Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  amountFunctional Decimal  @db.Decimal(65, 30)
+  method           String   @default("CASH")
+  note             String?
+  paidAt           DateTime @default(now())
+  /// Idempotencia sync / reintentos.
+  opId             String?  @unique
+
+  createdAt        DateTime @default(now())
+
+  @@index([purchaseId, paidAt])
+  @@index([storeId, paidAt])
 }
 
 model Store {
@@ -330,6 +366,7 @@ model Store {
   suppliers        Supplier[]
   idempotencyRecords IdempotencyRecord[]
   cashSessions     CashSession[]
+  purchasePayments PurchasePayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
