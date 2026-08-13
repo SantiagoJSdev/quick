@@ -21,6 +21,7 @@ import type { Request } from 'express';
 import { CreatePurchasePaymentDto } from './dto/create-purchase-payment.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { PurchasesListQueryDto } from './dto/purchases-list-query.dto';
+import { VoidPurchaseDto } from './dto/void-purchase.dto';
 import { PurchasesService } from './purchases.service';
 
 @ApiTags('purchases')
@@ -94,5 +95,39 @@ export class PurchasesController {
       throw new InternalServerErrorException('Missing store context');
     }
     return this.purchases.addPayment(storeId, id, dto);
+  }
+
+  @Post(':id/void-preview')
+  @ApiOkResponse({
+    description:
+      'Evalúa anulación: stock reversible vs omitido, abonos y deuda (sin mutar)',
+  })
+  async voidPreview(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const storeId = req.storeContext?.storeId;
+    if (!storeId) {
+      throw new InternalServerErrorException('Missing store context');
+    }
+    return this.purchases.voidPreview(storeId, id);
+  }
+
+  @Post(':id/void')
+  @ApiBody({ type: VoidPurchaseDto })
+  @ApiOkResponse({
+    description:
+      'Anula factura: stock reversible OUT_PURCHASE_VOID, deuda 0, pagos R1',
+  })
+  async voidPurchase(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VoidPurchaseDto,
+  ) {
+    const storeId = req.storeContext?.storeId;
+    if (!storeId) {
+      throw new InternalServerErrorException('Missing store context');
+    }
+    return this.purchases.voidPurchase(storeId, id, dto);
   }
 }

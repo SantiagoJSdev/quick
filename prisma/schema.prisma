@@ -28,6 +28,8 @@ enum StockMovementType {
   OUT_LOSS
   OUT_ADJUST
   OUT_TRANSFER
+  /// Reversión de stock al anular factura de proveedor.
+  OUT_PURCHASE_VOID
 }
 
 enum PosDeviceMode {
@@ -298,6 +300,14 @@ model Purchase {
   dueDate                DateTime? @db.Date
   paidAt                 DateTime?
 
+  /// RECEIVED | VOID — anulación no borra el historial.
+  /// (status ya existía; VOID = anulada)
+  voidedAt               DateTime?
+  voidReason             String?
+  voidOpId               String?   @unique
+  /// FULL_STOCK | PARTIAL_STOCK | FINANCIAL_ONLY
+  voidMode               String?
+
   lines        PurchaseLine[]
   payments     PurchasePayment[]
 
@@ -307,6 +317,7 @@ model Purchase {
   @@index([storeId, createdAt])
   @@index([storeId, paymentStatus])
   @@index([storeId, supplierId, paymentStatus])
+  @@index([storeId, status])
 }
 
 model PurchaseLine {
@@ -341,6 +352,9 @@ model PurchasePayment {
   paidAt           DateTime @default(now())
   /// Idempotencia sync / reintentos.
   opId             String?  @unique
+  /// Si se revirtió por anulación de factura.
+  reversedAt       DateTime?
+  reversalNote     String?
 
   createdAt        DateTime @default(now())
 

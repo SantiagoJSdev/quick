@@ -542,4 +542,85 @@ export class InventoryService {
 
     return { movementId: movement.id };
   }
+
+  /**
+   * Salida al anular compra (`OUT_PURCHASE_VOID`). Solo debe llamarse con qty ya
+   * calculada como reversible (≤ available). Idempotente por opId.
+   */
+  async applyOutPurchaseVoidLineTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      storeId: string;
+      productId: string;
+      quantity: Prisma.Decimal;
+      purchaseId: string;
+      opId?: string | null;
+    },
+  ) {
+    const { storeId, productId, quantity: qtyMag } = params;
+    if (!qtyMag.isFinite() || qtyMag.lte(0)) {
+      throw new BadRequestException('void quantity must be > 0');
+    }
+
+    if (params.opId) {
+      const dup = await tx.stockMovement.findUnique({
+        where: { opId: params.opId },
+      });
+      if (dup) {
+        if (dup.storeId !== storeId || dup.productId !== productId) {
+          throw new BadRequestException(
+            'opId already used for another movement',
+          );
+        }
+        return { movementId: dup.id, status: 'skipped' as const };
+      }
+    }
+
+    let item = await tx.inventoryItem.findUnique({
+      where: { productId_storeId: { productId, storeId } },
+    });
+    if (!item) {
+      throw new BadRequestException('No inventory line for product/store');
+    }
+
+    const available = item.quantity.minus(item.reserved);
+    if (available.lt(qtyMag)) {
+      throw new BadRequestException(
+        'Insufficient stock for purchase void reverse',
+      );
+    }
+
+    const avg = item.quantity.gt(0)
+      ? item.averageUnitCostFunctional
+      : new Prisma.Decimal(0);
+    const newQty = item.quantity.minus(qtyMag);
+    const newTotal = avg.mul(newQty);
+    const newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
+
+    const movement = await tx.stockMovement.create({
+      data: {
+        opId: params.opId ?? null,
+        productId,
+        storeId,
+        type: 'OUT_PURCHASE_VOID',
+        quantity: qtyMag,
+        unitCostFunctional: avg,
+        totalCostFunctional: avg.mul(qtyMag),
+        referenceId: params.purchaseId,
+        reason: 'PURCHASE_VOID',
+      },
+    });
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        quantity: newQty,
+        totalCostFunctional: newTotal,
+        averageUnitCostFunctional: newAvg,
+        lastAdjustedAt: new Date(),
+      },
+    });
+
+    return { movementId: movement.id, status: 'applied' as const };
+  }
 }

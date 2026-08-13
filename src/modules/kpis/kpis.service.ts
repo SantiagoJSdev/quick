@@ -360,6 +360,7 @@ export class KpisService {
     const open = await this.prisma.purchase.findMany({
       where: {
         storeId,
+        status: 'RECEIVED',
         paymentStatus: { in: ['CREDIT', 'PARTIAL'] },
         amountDueFunctional: { gt: 0 },
       },

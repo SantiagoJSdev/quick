@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -20,6 +21,23 @@ export class PurchasesListQueryDto {
   @IsOptional()
   @IsIn([...PURCHASE_PAYMENT_STATUSES, 'OPEN'])
   paymentStatus?: (typeof PURCHASE_PAYMENT_STATUSES)[number] | 'OPEN';
+
+  @ApiPropertyOptional({
+    enum: ['RECEIVED', 'VOID'],
+    description:
+      'Filtrar por status documental. Default: excluye VOID salvo includeVoided.',
+  })
+  @IsOptional()
+  @IsIn(['RECEIVED', 'VOID'])
+  status?: 'RECEIVED' | 'VOID';
+
+  @ApiPropertyOptional({
+    description: 'Si true, incluye facturas anuladas en el listado.',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  includeVoided?: boolean;
 
   @ApiPropertyOptional({ default: 50, maximum: 100 })
   @IsOptional()
