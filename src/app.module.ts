@@ -17,6 +17,7 @@ import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.mod
 import { OpsModule } from './modules/ops/ops.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { CashSessionModule } from './modules/cash-session/cash-session.module';
+import { KpisModule } from './modules/kpis/kpis.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { PrismaModule } from './prisma/prisma.module';
     OpsModule,
     ReportsModule,
     CashSessionModule,
+    KpisModule,
   ],
   controllers: [AppController],
   providers: [

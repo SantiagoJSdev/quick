@@ -6,6 +6,7 @@
 |-----------|-----------|
 | [OPS_METRICS.md](./OPS_METRICS.md) | `GET /ops/metrics` |
 | [PURCHASES.md](./PURCHASES.md) | Compras REST + sync `PURCHASE_RECEIVE` |
+| [KPIS.md](./KPIS.md) | Snapshot: ganancia/margen, deuda por días, stock bajo/negativo |
 | [SYNC_PUSH_SALE.md](./SYNC_PUSH_SALE.md) | Sync ventas `SALE` |
 | [SYNC_PUSH_SUPPLIERS.md](./SYNC_PUSH_SUPPLIERS.md) | Sync proveedores |
 | [CASH_SESSIONS.md](./CASH_SESSIONS.md) | Cierre de caja `cash-sessions` (B2) |

@@ -2,9 +2,29 @@
 
 Todas las rutas bajo **`/api/v1/purchases`** exigen header **`X-Store-Id: <uuid de tienda>`** con `Store` + `BusinessSettings` configurados.
 
+## Modelo de pago / deuda
+
+Cada compra tiene:
+
+| Campo | Valores | Significado |
+|-------|---------|-------------|
+| `paymentStatus` | `PAID` \| `CREDIT` \| `PARTIAL` | Contado / crédito / con abonos |
+| `amountPaidFunctional` | decimal string | Ya abonado (moneda funcional) |
+| `amountDueFunctional` | decimal string | Saldo pendiente |
+| `dueDate` | `YYYY-MM-DD` \| null | Vencimiento (crédito) |
+| `paidAt` | ISO datetime \| null | Cuándo quedó PAID |
+
+Abonos en tabla `PurchasePayment` (`POST /purchases/:id/payments`).
+
+**Default al crear:** si no envías `paymentStatus` → **`PAID`** (compatibilidad con clientes viejos). El front nuevo debe enviar `CREDIT` o `PAID` explícitamente.
+
+Compras históricas migradas se marcaron `PAID` (sin inventar deuda).
+
+---
+
 ## `POST /api/v1/purchases`
 
-Registra una compra recibida, actualiza inventario y movimientos en transacción.
+Registra una compra recibida, actualiza inventario y movimientos en transacción. Opcionalmente deja deuda abierta.
 
 ### Body (JSON)
 
@@ -15,21 +35,26 @@ Registra una compra recibida, actualiza inventario y movimientos en transacción
 | `lines[].productId` | UUID string | Sí | |
 | `lines[].quantity` | string numérica | Sí | Ej. `"10"` |
 | `lines[].unitCost` | string numérica | Sí | Costo unitario en moneda del documento. |
-| `documentCurrencyCode` | string | No | Ej. `VES`. Si se omite, usa reglas de `BusinessSettings`. |
-| **`supplierInvoiceReference`** | string | No | Factura, guía u otra referencia del proveedor. **Máximo 120 caracteres.** |
-| `id` | UUID string | No | Id de compra fijado por el cliente (idempotencia / offline). Si ya existe en la tienda, se devuelve la misma compra. |
-| `opId` | UUID string | No | Uso típico en sync: enlaza movimientos de stock. |
-| `fxSnapshot` | objeto | No | Snapshot FX (misma forma que en otras operaciones multi-moneda). |
+| `documentCurrencyCode` | string | No | Ej. `VES`. |
+| **`supplierInvoiceReference`** | string | No | Factura/guía. Máx. 120 caracteres. |
+| **`paymentStatus`** | string | No | `PAID` (default) \| `CREDIT` \| `PARTIAL`. |
+| **`initialAmountPaidFunctional`** | string | No | Solo con `PARTIAL`: abono inicial en funcional. |
+| **`dueDate`** | string | No | `YYYY-MM-DD` vencimiento si crédito. |
+| `id` | UUID string | No | Idempotencia / offline. |
+| `opId` | UUID string | No | Sync: enlaza movimientos (+ abono inicial si aplica). |
+| `fxSnapshot` | objeto | No | Snapshot FX. |
 
-**Validación:** el servidor usa lista blanca (`forbidNonWhitelisted`). Cualquier propiedad no listada provoca **400**. En particular, **`reference` no es un nombre válido en este body**; usar solo **`supplierInvoiceReference`**.
+**Validación:** lista blanca (`forbidNonWhitelisted`). Usar **`supplierInvoiceReference`**, no `reference` en REST.
 
-### Ejemplo
+### Ejemplo — crédito
 
 ```json
 {
   "supplierId": "11111111-1111-4111-8111-111111111111",
   "documentCurrencyCode": "VES",
   "supplierInvoiceReference": "FAC-2026-0042",
+  "paymentStatus": "CREDIT",
+  "dueDate": "2026-08-20",
   "lines": [
     {
       "productId": "22222222-2222-4222-8222-222222222222",
@@ -40,28 +65,104 @@ Registra una compra recibida, actualiza inventario y movimientos en transacción
 }
 ```
 
+### Ejemplo — contado (pagada)
+
+```json
+{
+  "supplierId": "11111111-1111-4111-8111-111111111111",
+  "paymentStatus": "PAID",
+  "supplierInvoiceReference": "FAC-0043",
+  "lines": [
+    { "productId": "22222222-2222-4222-8222-222222222222", "quantity": "2", "unitCost": "3.50" }
+  ]
+}
+```
+
+---
+
+## `GET /api/v1/purchases`
+
+Lista compras de la tienda.
+
+Query:
+
+| Param | Descripción |
+|-------|-------------|
+| `supplierId` | Filtrar por proveedor |
+| `paymentStatus` | `PAID` \| `CREDIT` \| `PARTIAL` \| **`OPEN`** (CREDIT+PARTIAL con saldo > 0) |
+| `limit` | 1–100 (default 50) |
+
+Respuesta: `{ items, meta: { limit, count } }`.
+
+---
+
+## `GET /api/v1/purchases/payables`
+
+Deuda abierta agrupada por proveedor.
+
+```json
+{
+  "totalDueFunctional": "350.00",
+  "items": [
+    {
+      "supplierId": "...",
+      "supplierName": "Rongra",
+      "active": true,
+      "openInvoices": 3,
+      "amountDueFunctional": "200.00",
+      "amountPaidFunctional": "50.00",
+      "totalFunctional": "250.00"
+    }
+  ]
+}
+```
+
+---
+
 ## `GET /api/v1/purchases/:id`
 
-Devuelve la compra con líneas y proveedor. Incluye **`supplierInvoiceReference`** (`string` o `null`) si existe en base.
+Compra con líneas, proveedor y **payments**.
+
+---
+
+## `POST /api/v1/purchases/:id/payments`
+
+Registra un abono. Reduce `amountDueFunctional`; si llega a 0 → `paymentStatus = PAID`.
+
+### Body
+
+| Campo | Obligatorio | Descripción |
+|-------|-------------|-------------|
+| `amountFunctional` | Sí | string > 0, ≤ saldo |
+| `method` | No | default `CASH` |
+| `note` | No | |
+| `opId` | No | Idempotencia |
+| `paidAt` | No | ISO datetime |
 
 ---
 
 ## `POST /api/v1/sync/push` — `opType: PURCHASE_RECEIVE`
 
-Misma lógica de negocio que `POST /purchases`, dentro del batch de sync. Requiere `payload.purchase`:
+Misma lógica que `POST /purchases`. En `payload.purchase` se aceptan además:
 
-| Campo | Obligatorio | Notas |
-|-------|-------------|--------|
-| `storeId` | Sí | Debe coincidir con `X-Store-Id`. |
-| `supplierId` | Sí | UUID del proveedor en servidor, o **en `sync/push` únicamente** el UUID provisional (`clientSupplierId`) si en el **mismo batch** un `SUPPLIER_CREATE` previo ya creó ese mapeo. |
-| `lines` | Sí | Misma forma que REST (`productId`, `quantity`, `unitCost` como strings). |
-| `documentCurrencyCode` | No | |
-| **`supplierInvoiceReference`** | No | Preferido. |
-| **`reference`** | No | **Solo en sync:** alias de `supplierInvoiceReference`. Si vienen ambos, gana **`supplierInvoiceReference`**. |
-| `id` | No | UUID de compra en el cliente. |
-| `fxSnapshot` | No | |
-| `fx` | No | Alias de `fxSnapshot`. |
+- `paymentStatus`, `initialAmountPaidFunctional`, `dueDate`
+- `reference` como alias de `supplierInvoiceReference` (solo sync)
 
-El **`opId`** del objeto `ops[]` se fusiona en la creación para `StockMovement` (no hace falta repetirlo dentro de `purchase`).
+Ver Postman `PURCHASE_RECEIVE`.
 
-Ver ejemplos en **`postman/QuickMarket_API.postman_collection.json`** (request `PURCHASE_RECEIVE`).
+---
+
+## SQL útil — deuda
+
+```sql
+SELECT
+  s.name AS proveedor,
+  SUM(pu."amountDueFunctional") AS deuda
+FROM "Purchase" pu
+JOIN "Supplier" s ON s.id = pu."supplierId"
+WHERE pu."storeId" = '0b54c944-28ba-4542-991a-4840c4801906'
+  AND pu."paymentStatus" IN ('CREDIT', 'PARTIAL')
+  AND pu."amountDueFunctional" > 0
+GROUP BY s.name
+ORDER BY deuda DESC;
+```
