@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsNumberString,
+  IsObject,
   IsOptional,
   MaxLength,
 } from 'class-validator';
@@ -47,4 +48,12 @@ export class PatchBusinessSettingsDto {
   @IsOptional()
   @IsBoolean()
   requireSuccessfulSyncAtClose?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Config ganancia real (bolsas, platos, nómina, fijos). Ver docs/api/KPIS.md',
+  })
+  @IsOptional()
+  @IsObject()
+  realProfitConfig?: Record<string, unknown>;
 }

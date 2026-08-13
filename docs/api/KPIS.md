@@ -4,74 +4,70 @@ Header obligatorio: **`X-Store-Id`**.
 
 ## `GET /api/v1/kpis/snapshot`
 
-Un solo endpoint para el tablero diario del minimarket (fase 1).
+Tablero diario: ganancia bruta, **ganancia real (fase 1)**, deuda y stock.
 
 ### Query
 
 | Param | Descripción |
 |-------|-------------|
-| `preset` | `today` (default) \| `yesterday` \| `week` \| `month` — aplica a **ganancia** |
-| `dateFrom` / `dateTo` | `YYYY-MM-DD` en zona de la tienda (alternativa a preset) |
+| `preset` | `today` (default) \| `yesterday` \| `week` \| `month` — aplica a **grossProfit** y **realProfit** |
+| `dateFrom` / `dateTo` | `YYYY-MM-DD` en zona de la tienda |
 
-**Nota:** `payables` y `stockAlerts` son **snapshot actual** (no dependen del rango). El rango solo filtra `grossProfit`.
+**Nota:** `payables` y `stockAlerts` son snapshot actual. El rango filtra ventas/ganancia.
 
-### Respuesta (forma)
+### `realProfit` (fase 1)
+
+```text
+realProfit = grossProfit
+           − bolsas (tickets × 0.90 × costo_paquete/100)
+           − platos charcutería (Σ qty SKUs × 0.025)
+           − nómina diaria × días_del_rango
+           − (luz+alquiler+transporte) × días_del_rango
+```
+
+Config en `BusinessSettings.realProfitConfig` (JSON). Si es null, se usan defaults del código.  
+Actualizar: `PATCH /business-settings` con `{ "realProfitConfig": { ... } }`.
+
+Pendientes (fase 2, KPI “para sacar”, etc.): [KPI_GANANCIA_REAL_PENDIENTES.md](../KPI_GANANCIA_REAL_PENDIENTES.md).
+
+### Respuesta (forma resumida)
 
 ```json
 {
-  "storeId": "...",
-  "currencyCode": "USD",
-  "from": "2026-08-13",
-  "to": "2026-08-13",
-  "timezone": "America/Caracas",
-  "preset": "today",
   "grossProfit": {
-    "netSales": "580.00",
-    "cogs": "495.00",
-    "grossProfit": "85.00",
-    "marginPercent": "14.6551",
-    "byDay": [
-      {
-        "date": "2026-08-13",
-        "netSales": "580.00",
-        "cogs": "495.00",
-        "grossProfit": "85.00",
-        "marginPercent": "14.6551"
-      }
-    ]
+    "netSales": "580",
+    "cogs": "495",
+    "grossProfit": "85",
+    "marginPercent": "14.65",
+    "byDay": []
   },
-  "payables": {
-    "asOf": "2026-08-13",
-    "totalDueFunctional": "295.00",
-    "openInvoiceCount": 4,
-    "aging": {
-      "overdue": "100.00",
-      "dueToday": "50.00",
-      "dueNext7Days": "145.00",
-      "laterOrNoDueDate": "0"
+  "realProfit": {
+    "phase": "1",
+    "calendarDays": 1,
+    "grossProfit": "85",
+    "deductions": {
+      "bags": { "tickets": 40, "bagsEstimated": "36", "amount": "..." },
+      "charcuterieWrap": { "unitsSold": "12", "unitCost": "0.025", "amount": "0.3" },
+      "payroll": { "dailyTotal": "24.15", "days": 1, "amount": "24.15" },
+      "fixed": { "utilities": "1.46", "rent": "2.5", "transport": "4.41", "amount": "8.37" },
+      "total": "..."
     },
-    "byDay": [
-      { "date": "2026-08-15", "amountDueFunctional": "145.00", "invoiceCount": 2 },
-      { "date": null, "amountDueFunctional": "0", "invoiceCount": 0 }
-    ]
+    "realProfit": "...",
+    "realMarginPercent": "..."
   },
-  "stockAlerts": {
-    "negativeCount": 1,
-    "lowCount": 12,
-    "defaults": { "lowUnits": "5", "lowKg": "3" },
-    "negatives": [ { "productId": "...", "sku": "...", "name": "...", "quantity": "-2", "available": "-2", "unit": "unidad" } ],
-    "low": [ { "productId": "...", "sku": "...", "name": "...", "quantity": "2", "available": "2", "threshold": "5", "unit": "unidad" } ]
-  }
+  "payables": {},
+  "stockAlerts": {}
 }
 ```
 
-### Reglas de negocio
+### Reglas
 
 | Bloque | Regla |
 |--------|--------|
-| **Ganancia** | Venta neta (líneas CONFIRMED − devoluciones) − COGS. COGS = qty × (`averageUnitCostFunctional` si &gt; 0, si no `Product.cost`). `marginPercent` = ganancia / venta neta × 100. |
-| **Deuda por días** | Facturas `CREDIT`/`PARTIAL` con saldo &gt; 0, agrupadas por `dueDate` (zona tienda). `date: null` = sin vencimiento. Incluye aging. |
-| **Stock** | Solo productos `active`. Negativos: `quantity` o disponible &lt; 0. Bajo: disponible &lt; `minStock` (si &gt; 0) o umbral default 5 ud / 3 kg. Máx. 100 ítems por lista. |
+| **grossProfit** | Venta neta − COGS (avg cost o `Product.cost`) |
+| **realProfit** | gross − mermas variables − nómina − fijos (fase 1) |
+| **payables** | Deuda CREDIT/PARTIAL por `dueDate` + aging |
+| **stockAlerts** | Negativos + bajo umbral (minStock o 5/3) |
 
 ### Ejemplo
 

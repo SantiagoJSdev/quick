@@ -7,6 +7,13 @@ import {
 } from '../../common/reports/report-amounts';
 import { resolveReportUtcRange } from '../../common/dates/report-date-presets';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  inclusiveCalendarDays,
+  resolveRealProfitConfig,
+  sumEmployeeDaily,
+  sumFixedDaily,
+  type RealProfitConfig,
+} from './real-profit-config';
 import type { KpisSnapshotQueryDto } from './dto/kpis-snapshot-query.dto';
 
 const DEFAULT_LOW_UNITS = new Prisma.Decimal(5);
@@ -66,6 +73,19 @@ export class KpisService {
       this.stockAlerts(storeId),
     ]);
 
+    const cfg = resolveRealProfitConfig(
+      (settings as { realProfitConfig?: unknown }).realProfitConfig,
+    );
+    const realProfit = await this.realProfitForRange(
+      storeId,
+      range.startUtc,
+      range.endUtc,
+      range.meta.dateFrom,
+      range.meta.dateTo,
+      grossProfit,
+      cfg,
+    );
+
     return {
       storeId,
       currencyCode: settings.functionalCurrency.code,
@@ -75,8 +95,120 @@ export class KpisService {
       rangeInterpretation: range.meta.rangeInterpretation,
       ...(range.preset ? { preset: range.preset } : {}),
       grossProfit,
+      realProfit,
       payables,
       stockAlerts,
+    };
+  }
+
+  /**
+   * Fase 1: ganancia bruta − bolsas − platos charcutería − nómina − fijos.
+   * Fijos/nómina se multiplican por días calendario del rango.
+   */
+  private async realProfitForRange(
+    storeId: string,
+    startUtc: Date,
+    endUtc: Date,
+    dateFrom: string,
+    dateTo: string,
+    gross: {
+      netSales: string;
+      cogs: string;
+      grossProfit: string;
+      marginPercent: string | null;
+    },
+    cfg: RealProfitConfig,
+  ) {
+    const days = inclusiveCalendarDays(dateFrom, dateTo);
+    const daysDec = new Prisma.Decimal(days);
+
+    const tickets = await this.prisma.sale.count({
+      where: {
+        storeId,
+        status: REPORT_SALE_STATUS,
+        createdAt: { gte: startUtc, lt: endUtc },
+      },
+    });
+
+    const bagProduct = await this.prisma.product.findUnique({
+      where: { id: cfg.bag.productId },
+      select: { id: true, name: true, cost: true, sku: true },
+    });
+    const bagUnitCost = bagProduct
+      ? bagProduct.cost.div(cfg.bag.packSize)
+      : new Prisma.Decimal(0);
+    const bagsEstimated = new Prisma.Decimal(tickets).mul(
+      cfg.bag.ticketCoverageRate,
+    );
+    const bagCost = bagsEstimated.mul(bagUnitCost);
+
+    const wrapQtyAgg = await this.prisma.saleLine.aggregate({
+      where: {
+        productId: { in: cfg.charcuterieWrap.productIds },
+        sale: {
+          storeId,
+          status: REPORT_SALE_STATUS,
+          createdAt: { gte: startUtc, lt: endUtc },
+        },
+      },
+      _sum: { quantity: true },
+    });
+    const wrapQty = wrapQtyAgg._sum.quantity ?? new Prisma.Decimal(0);
+    const wrapUnit = new Prisma.Decimal(cfg.charcuterieWrap.unitCost);
+    const wrapCost = wrapQty.mul(wrapUnit);
+
+    const payrollOneDay = sumEmployeeDaily(cfg);
+    const fixedOneDay = sumFixedDaily(cfg);
+    const payroll = payrollOneDay.mul(daysDec);
+    const fixed = fixedOneDay.mul(daysDec);
+
+    const grossProfit = new Prisma.Decimal(gross.grossProfit);
+    const totalDeductions = bagCost.plus(wrapCost).plus(payroll).plus(fixed);
+    const realProfit = grossProfit.minus(totalDeductions);
+
+    return {
+      phase: '1' as const,
+      calendarDays: days,
+      grossProfit: gross.grossProfit,
+      deductions: {
+        bags: {
+          tickets,
+          ticketCoverageRate: cfg.bag.ticketCoverageRate,
+          bagsEstimated: decimalToReportString(bagsEstimated),
+          packSize: cfg.bag.packSize,
+          productId: cfg.bag.productId,
+          productSku: bagProduct?.sku ?? null,
+          productName: bagProduct?.name ?? null,
+          packCost: bagProduct ? decimalToReportString(bagProduct.cost) : null,
+          unitCost: decimalToReportString(bagUnitCost),
+          amount: decimalToReportString(bagCost),
+        },
+        charcuterieWrap: {
+          productCount: cfg.charcuterieWrap.productIds.length,
+          unitsSold: decimalToReportString(wrapQty),
+          unitCost: cfg.charcuterieWrap.unitCost,
+          amount: decimalToReportString(wrapCost),
+        },
+        payroll: {
+          employees: cfg.employees,
+          dailyTotal: decimalToReportString(payrollOneDay),
+          days,
+          amount: decimalToReportString(payroll),
+        },
+        fixed: {
+          ...cfg.fixedDaily,
+          dailyTotal: decimalToReportString(fixedOneDay),
+          days,
+          amount: decimalToReportString(fixed),
+        },
+        total: decimalToReportString(totalDeductions),
+      },
+      realProfit: decimalToReportString(realProfit),
+      realMarginPercent: new Prisma.Decimal(gross.netSales).gt(0)
+        ? decimalToReportString(
+            realProfit.div(new Prisma.Decimal(gross.netSales)).mul(100),
+          )
+        : null,
     };
   }
 

@@ -99,6 +99,9 @@ model BusinessSettings {
   /// Cierre de caja: preferir sync exitoso (soft en B2).
   requireSuccessfulSyncAtClose Boolean @default(false)
 
+  /// Config ganancia real diaria (bolsas, platos, nómina, fijos). JSON ver RealProfitConfig.
+  realProfitConfig Json?
+
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 }
