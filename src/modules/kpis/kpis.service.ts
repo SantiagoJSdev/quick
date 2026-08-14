@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
 import {
@@ -36,6 +36,8 @@ function lineCost(
 
 @Injectable()
 export class KpisService {
+  private readonly logger = new Logger(KpisService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async snapshot(storeId: string, query: KpisSnapshotQueryDto) {
@@ -53,6 +55,16 @@ export class KpisService {
     });
     if (!settings) {
       throw new NotFoundException('Business settings not found for this store');
+    }
+
+    const timezoneSource =
+      store.timezone && store.timezone.trim() !== ''
+        ? ('store' as const)
+        : ('fallback_utc' as const);
+    if (timezoneSource === 'fallback_utc') {
+      this.logger.warn(
+        `Store ${storeId} has null/empty timezone; KPI day bounds use UTC. Set Store.timezone=America/Caracas`,
+      );
     }
 
     const range = resolveReportUtcRange({
@@ -84,6 +96,21 @@ export class KpisService {
       range.meta.dateTo,
       grossProfit,
       cfg,
+      {
+        timezone: range.meta.timezone,
+        timezoneSource,
+        rangeInterpretation: range.meta.rangeInterpretation,
+        preset: range.preset ?? null,
+      },
+    );
+
+    this.logger.log(
+      `KPI snapshot store=${storeId} preset=${range.preset ?? 'custom'} ` +
+        `tz=${range.meta.timezone}(${timezoneSource}) ` +
+        `from=${range.meta.dateFrom} to=${range.meta.dateTo} ` +
+        `utc=[${range.startUtc.toISOString()},${range.endUtc.toISOString()}) ` +
+        `gross=${grossProfit.grossProfit} real=${realProfit.realProfit} ` +
+        `deduct=${realProfit.deductions.total}`,
     );
 
     return {
@@ -92,7 +119,12 @@ export class KpisService {
       from: range.meta.dateFrom,
       to: range.meta.dateTo,
       timezone: range.meta.timezone,
+      timezoneSource,
       rangeInterpretation: range.meta.rangeInterpretation,
+      rangeUtc: {
+        gte: range.startUtc.toISOString(),
+        lt: range.endUtc.toISOString(),
+      },
       ...(range.preset ? { preset: range.preset } : {}),
       grossProfit,
       realProfit,
@@ -118,9 +150,24 @@ export class KpisService {
       marginPercent: string | null;
     },
     cfg: RealProfitConfig,
+    rangeMeta: {
+      timezone: string;
+      timezoneSource: 'store' | 'fallback_utc';
+      rangeInterpretation: string;
+      preset: string | null;
+    },
   ) {
     const days = inclusiveCalendarDays(dateFrom, dateTo);
     const daysDec = new Prisma.Decimal(days);
+    const nowZ = DateTime.now().setZone(rangeMeta.timezone);
+    const isSingleToday =
+      dateFrom === dateTo && dateFrom === nowZ.toISODate();
+    const dayStart = nowZ.startOf('day');
+    const dayProgress = isSingleToday
+      ? Math.min(1, Math.max(0, nowZ.diff(dayStart, 'days').days))
+      : dateFrom === dateTo
+        ? 1
+        : null;
 
     const tickets = await this.prisma.sale.count({
       where: {
@@ -165,6 +212,18 @@ export class KpisService {
     const grossProfit = new Prisma.Decimal(gross.grossProfit);
     const totalDeductions = bagCost.plus(wrapCost).plus(payroll).plus(fixed);
     const realProfit = grossProfit.minus(totalDeductions);
+    const opsFullDay = payroll.plus(fixed);
+    const warnings: string[] = [];
+    if (rangeMeta.timezoneSource === 'fallback_utc') {
+      warnings.push(
+        'Store.timezone vacío: el día KPI se calcula en UTC (desfase vs Caracas).',
+      );
+    }
+    if (isSingleToday && dayProgress != null && dayProgress < 0.98) {
+      warnings.push(
+        'Día en curso: nómina+fijos se cargan enteros (1 día) contra ventas parciales hasta ahora.',
+      );
+    }
 
     return {
       phase: '1' as const,
@@ -209,6 +268,24 @@ export class KpisService {
             realProfit.div(new Prisma.Decimal(gross.netSales)).mul(100),
           )
         : null,
+      explain: {
+        timezone: rangeMeta.timezone,
+        timezoneSource: rangeMeta.timezoneSource,
+        preset: rangeMeta.preset,
+        dateFrom,
+        dateTo,
+        rangeUtc: {
+          gte: startUtc.toISOString(),
+          lt: endUtc.toISOString(),
+        },
+        dayProgress:
+          dayProgress == null ? null : Number(dayProgress.toFixed(4)),
+        opsFullDayCharged: true,
+        opsFullDayAmount: decimalToReportString(opsFullDay),
+        formula:
+          'realProfit = grossProfit - bags - charcuterieWrap - payroll*days - fixed*days',
+        warnings,
+      },
     };
   }
 

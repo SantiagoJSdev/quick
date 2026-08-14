@@ -16,6 +16,8 @@ Cada compra tiene:
 
 Abonos en tabla `PurchasePayment` (`POST /purchases/:id/payments`).
 
+**Anulación (v1):** `POST /purchases/:id/void-preview` + `POST /purchases/:id/void`. Soft void (`status=VOID`); no hard-delete. Stock reversible con `OUT_PURCHASE_VOID`; abonos con `reversedAt` (R1). Ver § Anulación abajo.
+
 **Default al crear:** si no envías `paymentStatus` → **`PAID`** (compatibilidad con clientes viejos). El front nuevo debe enviar `CREDIT` o `PAID` explícitamente.
 
 Compras históricas migradas se marcaron `PAID` (sin inventar deuda).
@@ -82,14 +84,16 @@ Registra una compra recibida, actualiza inventario y movimientos en transacción
 
 ## `GET /api/v1/purchases`
 
-Lista compras de la tienda.
+Lista compras de la tienda. **Por defecto excluye `status=VOID`**.
 
 Query:
 
 | Param | Descripción |
 |-------|-------------|
 | `supplierId` | Filtrar por proveedor |
-| `paymentStatus` | `PAID` \| `CREDIT` \| `PARTIAL` \| **`OPEN`** (CREDIT+PARTIAL con saldo > 0) |
+| `paymentStatus` | `PAID` \| `CREDIT` \| `PARTIAL` \| **`OPEN`** (CREDIT+PARTIAL con saldo > 0; solo `RECEIVED`) |
+| `status` | `RECEIVED` \| `VOID` |
+| `includeVoided` | `true` → incluye anuladas (si no pasas `status`) |
 | `limit` | 1–100 (default 50) |
 
 Respuesta: `{ items, meta: { limit, count } }`.
@@ -98,7 +102,7 @@ Respuesta: `{ items, meta: { limit, count } }`.
 
 ## `GET /api/v1/purchases/payables`
 
-Deuda abierta agrupada por proveedor.
+Deuda abierta agrupada por proveedor (**solo `status=RECEIVED`**).
 
 ```json
 {
@@ -121,13 +125,14 @@ Deuda abierta agrupada por proveedor.
 
 ## `GET /api/v1/purchases/:id`
 
-Compra con líneas, proveedor y **payments**.
+Compra con líneas, proveedor y **payments** (incluye anuladas).
 
 ---
 
 ## `POST /api/v1/purchases/:id/payments`
 
-Registra un abono. Reduce `amountDueFunctional`; si llega a 0 → `paymentStatus = PAID`.
+Registra un abono. Reduce `amountDueFunctional`; si llega a 0 → `paymentStatus = PAID`.  
+**Bloqueado** si `status=VOID`.
 
 ### Body
 
@@ -138,6 +143,39 @@ Registra un abono. Reduce `amountDueFunctional`; si llega a 0 → `paymentStatus
 | `note` | No | |
 | `opId` | No | Idempotencia |
 | `paidAt` | No | ISO datetime |
+
+---
+
+## Anulación — `POST /api/v1/purchases/:id/void-preview`
+
+Evalúa sin mutar. Body vacío `{}`.
+
+| Campo | Significado |
+|-------|-------------|
+| `canVoid` | `false` si ya `VOID` (`blockers: ["ALREADY_VOID"]`) |
+| `voidMode` | `FULL_STOCK` \| `PARTIAL_STOCK` \| `FINANCIAL_ONLY` |
+| `lines[]` | `quantityPurchased`, `quantityReversible`, `quantitySkipped`, `skipReason`, `stockOnHand` |
+| `payments.willReversePayments` | Abonos activos → `reversedAt` (R1) |
+| `debt.amountDueFunctionalAfter` | `"0"` al confirmar |
+| `warnings` | Textos para UI / PIN |
+
+Heurística: `quantityReversible = min(qty_línea, max(0, quantity - reserved))`.
+
+---
+
+## Anulación — `POST /api/v1/purchases/:id/void`
+
+### Body
+
+| Campo | Obligatorio | Descripción |
+|-------|-------------|-------------|
+| `opId` | Sí | UUID idempotencia (`Purchase.voidOpId`) |
+| `reason` | Sí | 1–240 chars |
+| `confirmPartialStock` | Condicional | **`true` obligatorio** si preview tiene `quantitySkipped > 0` |
+
+Efectos: `OUT_PURCHASE_VOID` por línea reversible; `status=VOID`; deuda 0; abonos con `reversedAt`; no reescribe ventas/COGS. Respuesta incluye `voidResult`. Mismo `opId` → no duplica.
+
+**v1 online-only** (sin sync `PURCHASE_VOID`). PIN = front.
 
 ---
 
@@ -161,6 +199,7 @@ SELECT
 FROM "Purchase" pu
 JOIN "Supplier" s ON s.id = pu."supplierId"
 WHERE pu."storeId" = '0b54c944-28ba-4542-991a-4840c4801906'
+  AND pu."status" = 'RECEIVED'
   AND pu."paymentStatus" IN ('CREDIT', 'PARTIAL')
   AND pu."amountDueFunctional" > 0
 GROUP BY s.name
