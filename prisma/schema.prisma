@@ -28,6 +28,8 @@ enum StockMovementType {
   OUT_LOSS
   OUT_ADJUST
   OUT_TRANSFER
+  /// Reversión de stock al anular factura de proveedor.
+  OUT_PURCHASE_VOID
 }
 
 enum PosDeviceMode {
@@ -98,6 +100,9 @@ model BusinessSettings {
   blockRestrictedProductsWithoutStock Boolean @default(true)
   /// Cierre de caja: preferir sync exitoso (soft en B2).
   requireSuccessfulSyncAtClose Boolean @default(false)
+
+  /// Config ganancia real diaria (bolsas, platos, nómina, fijos). JSON ver RealProfitConfig.
+  realProfitConfig Json?
 
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
@@ -285,10 +290,34 @@ model Purchase {
   /// Número de factura, nota de entrega u otra referencia del documento del proveedor.
   supplierInvoiceReference String?
 
+  /// PAID | CREDIT | PARTIAL — control de deuda con el proveedor.
+  paymentStatus          String    @default("PAID")
+  /// Monto ya abonado (moneda funcional).
+  amountPaidFunctional   Decimal   @default(0) @db.Decimal(65, 30)
+  /// Saldo pendiente (moneda funcional).
+  amountDueFunctional    Decimal   @default(0) @db.Decimal(65, 30)
+  /// Vencimiento si es crédito.
+  dueDate                DateTime? @db.Date
+  paidAt                 DateTime?
+
+  /// RECEIVED | VOID — anulación no borra el historial.
+  /// (status ya existía; VOID = anulada)
+  voidedAt               DateTime?
+  voidReason             String?
+  voidOpId               String?   @unique
+  /// FULL_STOCK | PARTIAL_STOCK | FINANCIAL_ONLY
+  voidMode               String?
+
   lines        PurchaseLine[]
+  payments     PurchasePayment[]
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([storeId, createdAt])
+  @@index([storeId, paymentStatus])
+  @@index([storeId, supplierId, paymentStatus])
+  @@index([storeId, status])
 }
 
 model PurchaseLine {
@@ -307,6 +336,30 @@ model PurchaseLine {
   unitCostFunctional   Decimal? @db.Decimal(65, 30)
   lineTotalDocument    Decimal? @db.Decimal(65, 30)
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+}
+
+/// Abono a una factura de compra (cuenta por pagar).
+model PurchasePayment {
+  id               String   @id @default(uuid())
+  purchaseId       String
+  purchase         Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  amountFunctional Decimal  @db.Decimal(65, 30)
+  method           String   @default("CASH")
+  note             String?
+  paidAt           DateTime @default(now())
+  /// Idempotencia sync / reintentos.
+  opId             String?  @unique
+  /// Si se revirtió por anulación de factura.
+  reversedAt       DateTime?
+  reversalNote     String?
+
+  createdAt        DateTime @default(now())
+
+  @@index([purchaseId, paidAt])
+  @@index([storeId, paidAt])
 }
 
 model Store {
@@ -330,6 +383,7 @@ model Store {
   suppliers        Supplier[]
   idempotencyRecords IdempotencyRecord[]
   cashSessions     CashSession[]
+  purchasePayments PurchasePayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

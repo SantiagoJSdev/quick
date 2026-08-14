@@ -96,6 +96,17 @@ export function parsePurchasePayload(
         ? p.documentCurrencyCode
         : undefined,
     supplierInvoiceReference: parseSupplierInvoiceReference(p),
+    paymentStatus:
+      p.paymentStatus === 'PAID' ||
+      p.paymentStatus === 'CREDIT' ||
+      p.paymentStatus === 'PARTIAL'
+        ? p.paymentStatus
+        : undefined,
+    initialAmountPaidFunctional:
+      typeof p.initialAmountPaidFunctional === 'string'
+        ? p.initialAmountPaidFunctional
+        : undefined,
+    dueDate: typeof p.dueDate === 'string' ? p.dueDate : undefined,
     lines,
     fxSnapshot,
   };

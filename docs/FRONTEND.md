@@ -196,9 +196,9 @@ Cola: `retryable` (red/5xx), `manual` (400, 404, 409), `success`.
 
 ## 9. Compras proveedor (UX)
 
-Backend listo: `POST /purchases` crea compra + `IN_PURCHASE` + stock.
+Backend listo: `POST /purchases` (stock + **contado/crédito**), `GET /purchases`, `GET /purchases/payables`, `POST /purchases/:id/payments`.
 
-Pantalla recomendada: proveedor, fecha, moneda, tasa; grid de líneas; total fijo abajo; borrador local offline → `PURCHASE_RECEIVE` al sync. Campo opcional `supplierInvoiceReference`. Detalle: [api/PURCHASES.md](./api/PURCHASES.md).
+Pantalla: proveedor, Nº factura, **PAID/CREDIT**, grid de líneas, total; listado deuda y abonos. Offline → `PURCHASE_RECEIVE`. Detalle: [api/PURCHASES.md](./api/PURCHASES.md) y [FACTURA_PROVEEDOR_DEUDA_E_INVENTARIO_FRONTEND.md](./FACTURA_PROVEEDOR_DEUDA_E_INVENTARIO_FRONTEND.md).
 
 ---
 
@@ -214,6 +214,7 @@ KPIs en **moneda funcional** (`currencyCode`); no recalcular `netSales` ni `avgT
 | TV kiosk | `GET /dashboard/device/:deviceId?preset=today` | `X-Device-Token` (sin Store-Id) |
 | Ver modo | `GET /pos-devices/:deviceId/dashboard-config` | `X-Store-Id` |
 | Activar TV | `PATCH .../dashboard-config` | `X-Store-Id` + `X-Dashboard-Admin-Pin` |
+| Cierre de caja | `POST/GET /cash-sessions` | `X-Store-Id` — ver [api/CASH_SESSIONS.md](./api/CASH_SESSIONS.md) |
 
 `:deviceId` = ID instalación (sync/ventas), **no** UUID fila `POSDevice.id`.
 

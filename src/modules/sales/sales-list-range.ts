@@ -30,7 +30,7 @@ export function resolveSaleListUtcRange(
       ? storeTimezone.trim()
       : 'UTC';
 
-  let interpretation = `Calendar dates dateFrom/dateTo are interpreted in store timezone "${zone}" (midnight through end-of-day). Timestamps in API responses are ISO-8601 in UTC.`;
+  let interpretation = `Calendar dates dateFrom/dateTo are interpreted in store timezone "${zone}" as [00:00 dateFrom, 00:00 day-after-dateTo) exclusive end. Filter Sale.createdAt with gte/lt those UTC bounds.`;
 
   const nowZ = DateTime.now().setZone(zone);
   if (!nowZ.isValid) {
@@ -77,26 +77,25 @@ export function resolveSaleListUtcRange(
   }
 
   const fromDay = DateTime.fromISO(fromStr!, { zone }).startOf('day');
-  const toDayEnd = DateTime.fromISO(toStr!, { zone }).endOf('day');
-  if (!fromDay.isValid || !toDayEnd.isValid) {
+  const toDayStart = DateTime.fromISO(toStr!, { zone }).startOf('day');
+  if (!fromDay.isValid || !toDayStart.isValid) {
     throw new BadRequestException('Invalid dateFrom or dateTo');
   }
-  if (fromDay > toDayEnd.startOf('day')) {
+  if (fromDay > toDayStart) {
     throw new BadRequestException('dateFrom must be on or before dateTo');
   }
 
   const inclusiveDays =
-    Math.floor(
-      toDayEnd.startOf('day').diff(fromDay.startOf('day'), 'days').days,
-    ) + 1;
+    Math.floor(toDayStart.diff(fromDay, 'days').days) + 1;
   if (inclusiveDays > MAX_INCLUSIVE_DAYS) {
     throw new BadRequestException(
       `Date range cannot exceed ${MAX_INCLUSIVE_DAYS} inclusive calendar days`,
     );
   }
 
+  /** Inicio inclusive (00:00 zona) → fin exclusivo (00:00 del día siguiente a dateTo). */
   const startUtc = fromDay.toUTC().toJSDate();
-  const endUtc = toDayEnd.toUTC().toJSDate();
+  const endUtc = toDayStart.plus({ days: 1 }).toUTC().toJSDate();
 
   return {
     startUtc,

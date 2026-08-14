@@ -85,10 +85,13 @@ export class BusinessSettingsService {
     if (dto.requireSuccessfulSyncAtClose !== undefined) {
       data.requireSuccessfulSyncAtClose = dto.requireSuccessfulSyncAtClose;
     }
+    if (dto.realProfitConfig !== undefined) {
+      data.realProfitConfig = dto.realProfitConfig as Prisma.InputJsonValue;
+    }
 
     if (Object.keys(data).length === 0) {
       throw new BadRequestException(
-        'Provide at least one field to update (defaultMarginPercent or stock policy flags)',
+        'Provide at least one field to update (defaultMarginPercent, stock policy flags, or realProfitConfig)',
       );
     }
 
