@@ -387,11 +387,7 @@ export class InventoryService {
       }
     }
 
-    const product = await tx.product.findUnique({ where: { id: productId } });
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
-
+    // Producto ya validado por el caller (purchase create); FK protege el create.
     let item = await tx.inventoryItem.findUnique({
       where: { productId_storeId: { productId, storeId } },
     });

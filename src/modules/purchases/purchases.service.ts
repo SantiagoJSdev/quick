@@ -121,8 +121,13 @@ export class PurchasesService {
       dto.fxSnapshot,
     );
 
-    return this.prisma.$transaction((tx) =>
-      this.createPurchaseTx(tx, storeId, dto, fx),
+    return this.prisma.$transaction(
+      (tx) => this.createPurchaseTx(tx, storeId, dto, fx),
+      {
+        // Facturas con muchas líneas: N× (producto + inventario + movimiento) en Neon.
+        maxWait: 15_000,
+        timeout: 60_000,
+      },
     );
   }
 
@@ -186,14 +191,18 @@ export class PurchasesService {
     let totalFunc = new Prisma.Decimal(0);
     const now = new Date();
 
-    for (const line of dto.lines) {
-      const product = await tx.product.findUnique({
-        where: { id: line.productId },
-      });
-      if (!product) {
-        throw new BadRequestException(`Product ${line.productId} not found`);
-      }
+    const productIds = [...new Set(dto.lines.map((l) => l.productId))];
+    const products = await tx.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true },
+    });
+    if (products.length !== productIds.length) {
+      const found = new Set(products.map((p) => p.id));
+      const missing = productIds.find((id) => !found.has(id));
+      throw new BadRequestException(`Product ${missing} not found`);
+    }
 
+    for (const line of dto.lines) {
       const qty = new Prisma.Decimal(line.quantity);
       const unitCostDoc = new Prisma.Decimal(line.unitCost);
       const lineTotalDocument = qty.mul(unitCostDoc);
@@ -609,7 +618,8 @@ export class PurchasesService {
   }
 
   async voidPurchase(storeId: string, purchaseId: string, dto: VoidPurchaseDto) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(
+      async (tx) => {
       const byOp = await tx.purchase.findFirst({
         where: { voidOpId: dto.opId, storeId },
       });
@@ -783,6 +793,11 @@ export class PurchasesService {
           paymentsReversed: activePayments.length,
         },
       };
-    });
+      },
+      {
+        maxWait: 15_000,
+        timeout: 60_000,
+      },
+    );
   }
 }
