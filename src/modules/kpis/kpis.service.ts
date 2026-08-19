@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
 import {
@@ -8,12 +13,21 @@ import {
 import { resolveReportUtcRange } from '../../common/dates/report-date-presets';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  calendarDateUtcMidnight,
+  listInclusiveYmd,
+  resolveCapitalSeriesCalendarRange,
+  storeZone,
+  ymdFromPrismaDate,
+  type CapitalSnapshotSource,
+} from './capital-snapshot.util';
+import {
   inclusiveCalendarDays,
   resolveRealProfitConfig,
   sumEmployeeDaily,
   sumFixedDaily,
   type RealProfitConfig,
 } from './real-profit-config';
+import type { KpisCapitalSeriesQueryDto } from './dto/kpis-capital-series-query.dto';
 import type { KpisSnapshotQueryDto } from './dto/kpis-snapshot-query.dto';
 import { resolveSaleListUtcRange } from '../sales/sales-list-range';
 
@@ -133,6 +147,278 @@ export class KpisService {
       capital,
       payables,
       stockAlerts,
+    };
+  }
+
+  /**
+   * Foto del día: inventario/deuda **ahora**; P&L, merma, compras y abonos de `dateYmd`.
+   * LAZY no pisa una fila existente (la foto oficial es el cierre de caja).
+   */
+  async upsertCapitalSnapshot(
+    storeId: string,
+    dateYmd: string,
+    source: CapitalSnapshotSource,
+  ) {
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { timezone: true },
+    });
+    if (!store) {
+      throw new NotFoundException('Store not found');
+    }
+
+    const zone = storeZone(store.timezone);
+    const todayYmd = DateTime.now().setZone(zone).toISODate()!;
+    if (dateYmd > todayYmd) {
+      throw new BadRequestException(
+        'date cannot be in the future (store timezone)',
+      );
+    }
+
+    const date = calendarDateUtcMidnight(dateYmd);
+    if (source === 'LAZY') {
+      const existing = await this.prisma.storeCapitalSnapshot.findUnique({
+        where: { storeId_date: { storeId, date } },
+      });
+      if (existing) {
+        return this.toPublicCapitalSnapshot(existing);
+      }
+    }
+
+    const photo = await this.computeCapitalPhoto(storeId, dateYmd, zone);
+    const row = await this.prisma.storeCapitalSnapshot.upsert({
+      where: { storeId_date: { storeId, date } },
+      create: {
+        storeId,
+        date,
+        source,
+        capturedAt: new Date(),
+        ...photo,
+      },
+      update: {
+        source,
+        capturedAt: new Date(),
+        ...photo,
+      },
+    });
+
+    this.logger.log(
+      `Capital snapshot ${source} store=${storeId} date=${dateYmd} ` +
+        `equity=${photo.netInventoryEquity} real=${photo.realProfit}`,
+    );
+    return this.toPublicCapitalSnapshot(row);
+  }
+
+  /** Default = ayer Caracas. Inventario/deuda se fotografían ahora. */
+  async runCapitalSnapshot(storeId: string, dateYmd?: string) {
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { timezone: true },
+    });
+    if (!store) {
+      throw new NotFoundException('Store not found');
+    }
+    const zone = storeZone(store.timezone);
+    const today = DateTime.now().setZone(zone).startOf('day');
+    const date = dateYmd?.trim()
+      ? dateYmd.trim()
+      : today.minus({ days: 1 }).toISODate()!;
+    const snapshot = await this.upsertCapitalSnapshot(storeId, date, 'MANUAL');
+    return {
+      storeId,
+      timezone: zone,
+      date,
+      source: 'MANUAL' as const,
+      snapshot,
+    };
+  }
+
+  /**
+   * Cierre de caja: upsert de **hoy** (zona tienda). El caller no debe fallar el close.
+   */
+  async captureTodayOnCashClose(storeId: string): Promise<{
+    date: string;
+    ok: true;
+    netInventoryEquity: string;
+  }> {
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { timezone: true },
+    });
+    if (!store) {
+      throw new NotFoundException('Store not found');
+    }
+    const date = DateTime.now().setZone(storeZone(store.timezone)).toISODate()!;
+    const snapshot = await this.upsertCapitalSnapshot(
+      storeId,
+      date,
+      'CASH_CLOSE',
+    );
+    return {
+      date,
+      ok: true,
+      netInventoryEquity: snapshot.netInventoryEquity,
+    };
+  }
+
+  async capitalSeries(storeId: string, query: KpisCapitalSeriesQueryDto) {
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { timezone: true },
+    });
+    if (!store) {
+      throw new NotFoundException('Store not found');
+    }
+
+    const settings = await this.prisma.businessSettings.findUnique({
+      where: { storeId },
+      include: { functionalCurrency: true },
+    });
+    if (!settings) {
+      throw new NotFoundException('Business settings not found for this store');
+    }
+
+    const timezoneSource =
+      store.timezone && store.timezone.trim() !== ''
+        ? ('store' as const)
+        : ('fallback_utc' as const);
+    if (timezoneSource === 'fallback_utc') {
+      this.logger.warn(
+        `Store ${storeId} has null/empty timezone; capital-series uses UTC`,
+      );
+    }
+
+    const zone = storeZone(store.timezone);
+    const { dateFrom, dateTo, preset } = resolveCapitalSeriesCalendarRange({
+      storeTimezone: store.timezone,
+      preset: query.preset,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+    });
+
+    const yesterday = DateTime.now()
+      .setZone(zone)
+      .minus({ days: 1 })
+      .toISODate()!;
+    let lazyYesterday = false;
+    try {
+      const before = await this.prisma.storeCapitalSnapshot.findUnique({
+        where: {
+          storeId_date: {
+            storeId,
+            date: calendarDateUtcMidnight(yesterday),
+          },
+        },
+        select: { id: true },
+      });
+      if (!before) {
+        await this.upsertCapitalSnapshot(storeId, yesterday, 'LAZY');
+        lazyYesterday = true;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Lazy capital snapshot for yesterday failed store=${storeId}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
+
+    const prevDay = DateTime.fromISO(dateFrom, { zone: 'utc' })
+      .minus({ days: 1 })
+      .toISODate()!;
+    const rows = await this.prisma.storeCapitalSnapshot.findMany({
+      where: {
+        storeId,
+        date: {
+          gte: calendarDateUtcMidnight(prevDay),
+          lte: calendarDateUtcMidnight(dateTo),
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    const byDate = new Map(rows.map((r) => [ymdFromPrismaDate(r.date), r]));
+    const cfg = resolveRealProfitConfig(
+      (settings as { realProfitConfig?: unknown }).realProfitConfig,
+    );
+
+    const daysInRange = listInclusiveYmd(dateFrom, dateTo);
+    const missingDates = daysInRange.filter((d) => !byDate.has(d));
+
+    const items: Array<{
+      date: string;
+      inventoryCapital: string;
+      payablesDue: string;
+      netInventoryEquity: string;
+      realProfit: string;
+      lossCostFunctional: string;
+      purchasesFunctional: string;
+      supplierPayments: string;
+      deltaEquity: string | null;
+      source: string;
+      capturedAt: string;
+    }> = [];
+
+    for (const ymd of daysInRange) {
+      const row = byDate.get(ymd);
+      if (!row) continue;
+
+      const prev = byDate.get(
+        DateTime.fromISO(ymd, { zone: 'utc' }).minus({ days: 1 }).toISODate()!,
+      );
+      const deltaEquity =
+        prev != null
+          ? decimalToReportString(
+              row.netInventoryEquity.minus(prev.netInventoryEquity),
+            )
+          : null;
+
+      let realProfit = decimalToReportString(row.realProfit);
+      let lossCostFunctional = decimalToReportString(row.lossCostFunctional);
+      try {
+        const recomputed = await this.recomputeRealProfitForDay(
+          storeId,
+          ymd,
+          zone,
+          timezoneSource,
+          cfg,
+        );
+        realProfit = recomputed.realProfit;
+        lossCostFunctional = recomputed.lossCostFunctional;
+      } catch (err) {
+        this.logger.warn(
+          `Recompute realProfit for ${ymd} failed store=${storeId}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+
+      items.push({
+        date: ymd,
+        inventoryCapital: decimalToReportString(row.inventoryCapital),
+        payablesDue: decimalToReportString(row.payablesDue),
+        netInventoryEquity: decimalToReportString(row.netInventoryEquity),
+        realProfit,
+        lossCostFunctional,
+        purchasesFunctional: decimalToReportString(row.purchasesFunctional),
+        supplierPayments: decimalToReportString(row.supplierPayments),
+        deltaEquity,
+        source: row.source,
+        capturedAt: row.capturedAt.toISOString(),
+      });
+    }
+
+    return {
+      storeId,
+      currencyCode: settings.functionalCurrency.code,
+      timezone: zone,
+      timezoneSource,
+      from: dateFrom,
+      to: dateTo,
+      ...(preset ? { preset } : {}),
+      lazyYesterday,
+      missingDates,
+      items,
     };
   }
 
@@ -319,7 +605,33 @@ export class KpisService {
     const today = DateTime.now().setZone(zone).toISODate();
     const todayBounds = resolveSaleListUtcRange(zone, today!, today!);
 
-    const [invAgg, payAgg, lossToday] = await Promise.all([
+    const [equity, lossToday] = await Promise.all([
+      this.inventoryEquityNow(storeId),
+      this.prisma.stockMovement.aggregate({
+        where: {
+          storeId,
+          type: 'OUT_LOSS',
+          createdAt: { gte: todayBounds.startUtc, lt: todayBounds.endUtc },
+        },
+        _sum: { totalCostFunctional: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const lossCostToday =
+      lossToday._sum.totalCostFunctional ?? new Prisma.Decimal(0);
+
+    return {
+      inventoryCapital: decimalToReportString(equity.inventoryCapital),
+      payablesDue: decimalToReportString(equity.payablesDue),
+      netInventoryEquity: decimalToReportString(equity.netInventoryEquity),
+      lossCostToday: decimalToReportString(lossCostToday),
+      lossMovementCountToday: lossToday._count._all,
+    };
+  }
+
+  private async inventoryEquityNow(storeId: string) {
+    const [invAgg, payAgg] = await Promise.all([
       this.prisma.inventoryItem.aggregate({
         where: {
           storeId,
@@ -337,31 +649,174 @@ export class KpisService {
         },
         _sum: { amountDueFunctional: true },
       }),
-      this.prisma.stockMovement.aggregate({
-        where: {
-          storeId,
-          type: 'OUT_LOSS',
-          createdAt: { gte: todayBounds.startUtc, lt: todayBounds.endUtc },
-        },
-        _sum: { totalCostFunctional: true },
-        _count: { _all: true },
-      }),
     ]);
 
     const inventoryCapital =
       invAgg._sum.totalCostFunctional ?? new Prisma.Decimal(0);
     const payablesDue =
       payAgg._sum.amountDueFunctional ?? new Prisma.Decimal(0);
-    const netInventoryEquity = inventoryCapital.minus(payablesDue);
-    const lossCostToday =
-      lossToday._sum.totalCostFunctional ?? new Prisma.Decimal(0);
+    return {
+      inventoryCapital,
+      payablesDue,
+      netInventoryEquity: inventoryCapital.minus(payablesDue),
+    };
+  }
+
+  private async computeCapitalPhoto(
+    storeId: string,
+    dateYmd: string,
+    zone: string,
+  ) {
+    const settings = await this.prisma.businessSettings.findUnique({
+      where: { storeId },
+    });
+    if (!settings) {
+      throw new NotFoundException('Business settings not found for this store');
+    }
+
+    const timezoneSource =
+      zone === 'UTC' ? ('fallback_utc' as const) : ('store' as const);
+    const bounds = resolveSaleListUtcRange(zone, dateYmd, dateYmd);
+
+    const [equity, gross, purchasesRows, paymentsAgg] = await Promise.all([
+      this.inventoryEquityNow(storeId),
+      this.grossProfitForRange(
+        storeId,
+        bounds.startUtc,
+        bounds.endUtc,
+        zone,
+      ),
+      this.prisma.purchase.findMany({
+        where: {
+          storeId,
+          status: 'RECEIVED',
+          dateReceived: { gte: bounds.startUtc, lt: bounds.endUtc },
+        },
+        select: { totalFunctional: true, total: true },
+      }),
+      this.prisma.purchasePayment.aggregate({
+        where: {
+          storeId,
+          reversedAt: null,
+          paidAt: { gte: bounds.startUtc, lt: bounds.endUtc },
+        },
+        _sum: { amountFunctional: true },
+      }),
+    ]);
+
+    const cfg = resolveRealProfitConfig(
+      (settings as { realProfitConfig?: unknown }).realProfitConfig,
+    );
+    const real = await this.realProfitForRange(
+      storeId,
+      bounds.startUtc,
+      bounds.endUtc,
+      dateYmd,
+      dateYmd,
+      gross,
+      cfg,
+      {
+        timezone: bounds.meta.timezone,
+        timezoneSource,
+        rangeInterpretation: bounds.meta.rangeInterpretation,
+        preset: null,
+      },
+    );
+
+    let purchasesFunctional = new Prisma.Decimal(0);
+    for (const p of purchasesRows) {
+      purchasesFunctional = purchasesFunctional.plus(
+        p.totalFunctional ?? p.total,
+      );
+    }
+    const supplierPayments =
+      paymentsAgg._sum.amountFunctional ?? new Prisma.Decimal(0);
+    const lossCost = new Prisma.Decimal(real.deductions.losses.amount);
 
     return {
-      inventoryCapital: decimalToReportString(inventoryCapital),
-      payablesDue: decimalToReportString(payablesDue),
-      netInventoryEquity: decimalToReportString(netInventoryEquity),
-      lossCostToday: decimalToReportString(lossCostToday),
-      lossMovementCountToday: lossToday._count._all,
+      inventoryCapital: equity.inventoryCapital,
+      payablesDue: equity.payablesDue,
+      netInventoryEquity: equity.netInventoryEquity,
+      netSales: new Prisma.Decimal(gross.netSales),
+      cogs: new Prisma.Decimal(gross.cogs),
+      grossProfit: new Prisma.Decimal(gross.grossProfit),
+      realProfit: new Prisma.Decimal(real.realProfit),
+      realProfitDeductions: real.deductions as unknown as Prisma.InputJsonValue,
+      purchasesFunctional,
+      supplierPayments,
+      lossCostFunctional: lossCost,
+    };
+  }
+
+  private async recomputeRealProfitForDay(
+    storeId: string,
+    dateYmd: string,
+    zone: string,
+    timezoneSource: 'store' | 'fallback_utc',
+    cfg: RealProfitConfig,
+  ) {
+    const bounds = resolveSaleListUtcRange(zone, dateYmd, dateYmd);
+    const gross = await this.grossProfitForRange(
+      storeId,
+      bounds.startUtc,
+      bounds.endUtc,
+      zone,
+    );
+    const real = await this.realProfitForRange(
+      storeId,
+      bounds.startUtc,
+      bounds.endUtc,
+      dateYmd,
+      dateYmd,
+      gross,
+      cfg,
+      {
+        timezone: bounds.meta.timezone,
+        timezoneSource,
+        rangeInterpretation: bounds.meta.rangeInterpretation,
+        preset: null,
+      },
+    );
+    return {
+      realProfit: real.realProfit,
+      lossCostFunctional: real.deductions.losses.amount,
+    };
+  }
+
+  private toPublicCapitalSnapshot(row: {
+    date: Date;
+    inventoryCapital: Prisma.Decimal;
+    payablesDue: Prisma.Decimal;
+    netInventoryEquity: Prisma.Decimal;
+    netSales: Prisma.Decimal;
+    cogs: Prisma.Decimal;
+    grossProfit: Prisma.Decimal;
+    realProfit: Prisma.Decimal;
+    lossCostFunctional: Prisma.Decimal;
+    purchasesFunctional: Prisma.Decimal;
+    supplierPayments: Prisma.Decimal;
+    paymentCommissions: Prisma.Decimal | null;
+    source: string;
+    capturedAt: Date;
+  }) {
+    return {
+      date: ymdFromPrismaDate(row.date),
+      inventoryCapital: decimalToReportString(row.inventoryCapital),
+      payablesDue: decimalToReportString(row.payablesDue),
+      netInventoryEquity: decimalToReportString(row.netInventoryEquity),
+      netSales: decimalToReportString(row.netSales),
+      cogs: decimalToReportString(row.cogs),
+      grossProfit: decimalToReportString(row.grossProfit),
+      realProfit: decimalToReportString(row.realProfit),
+      lossCostFunctional: decimalToReportString(row.lossCostFunctional),
+      purchasesFunctional: decimalToReportString(row.purchasesFunctional),
+      supplierPayments: decimalToReportString(row.supplierPayments),
+      paymentCommissions:
+        row.paymentCommissions != null
+          ? decimalToReportString(row.paymentCommissions)
+          : null,
+      source: row.source,
+      capturedAt: row.capturedAt.toISOString(),
     };
   }
 

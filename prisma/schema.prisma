@@ -384,6 +384,7 @@ model Store {
   idempotencyRecords IdempotencyRecord[]
   cashSessions     CashSession[]
   purchasePayments PurchasePayment[]
+  capitalSnapshots StoreCapitalSnapshot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -629,5 +630,47 @@ model CashSession {
 
   @@index([storeId, deviceId, status])
   @@index([storeId, openedAt])
+}
+
+/// Foto diaria de patrimonio (1 por tienda por día calendario en Store.timezone).
+/// Inventario/deuda = al momento del upsert (cierre de caja / run / lazy).
+/// realProfit y flujos del día se pueden recalcular al leer la serie.
+model StoreCapitalSnapshot {
+  id      String @id @default(uuid())
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  /// Día local YYYY-MM-DD (medianoche UTC en columna DATE).
+  date    DateTime @db.Date
+
+  inventoryCapital   Decimal @db.Decimal(65, 30)
+  payablesDue        Decimal @db.Decimal(65, 30)
+  netInventoryEquity Decimal @db.Decimal(65, 30)
+
+  netSales    Decimal @db.Decimal(65, 30)
+  cogs        Decimal @db.Decimal(65, 30)
+  grossProfit Decimal @db.Decimal(65, 30)
+  realProfit  Decimal @db.Decimal(65, 30)
+  /// Copia del desglose (bolsas, nómina, mermas…).
+  realProfitDeductions Json?
+
+  purchasesFunctional Decimal @default(0) @db.Decimal(65, 30)
+  supplierPayments    Decimal @default(0) @db.Decimal(65, 30)
+  lossCostFunctional  Decimal @default(0) @db.Decimal(65, 30)
+  /// Paso 3 — comisiones de métodos de pago.
+  paymentCommissions  Decimal? @db.Decimal(65, 30)
+
+  /// Paso 4 — estimado de caja / disponible para sacar.
+  cashBalanceEst   Decimal? @db.Decimal(65, 30)
+  cashAvailableEst Decimal? @db.Decimal(65, 30)
+
+  capturedAt DateTime @default(now())
+  /// CASH_CLOSE | LAZY | MANUAL
+  source     String   @default("MANUAL")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, date])
+  @@index([storeId, date])
 }
 

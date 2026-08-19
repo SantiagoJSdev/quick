@@ -48,7 +48,12 @@ describe('CashSessionService', () => {
     const posDevice = {
       touchOrRegister: jest.fn().mockResolvedValue(deviceId),
     };
-    const service = new CashSessionService(prisma as never, posDevice as never);
+    const kpis = { captureTodayOnCashClose: jest.fn() };
+    const service = new CashSessionService(
+      prisma as never,
+      posDevice as never,
+      kpis as never,
+    );
 
     const result = await service.open(storeId, { deviceId });
     expect(result.id).toBe(sessionId);
@@ -62,7 +67,11 @@ describe('CashSessionService', () => {
         findFirst: jest.fn().mockResolvedValue(openRow({ status: 'CLOSED' })),
       },
     };
-    const service = new CashSessionService(prisma as never, {} as never);
+    const service = new CashSessionService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
     await expect(
       service.close(storeId, sessionId, { closeMode: 'ONLINE' }),
     ).rejects.toBeInstanceOf(ConflictException);
@@ -72,7 +81,11 @@ describe('CashSessionService', () => {
     const prisma = {
       cashSession: { findFirst: jest.fn().mockResolvedValue(null) },
     };
-    const service = new CashSessionService(prisma as never, {} as never);
+    const service = new CashSessionService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
     await expect(service.findCurrent(storeId, deviceId)).rejects.toBeInstanceOf(
       NotFoundException,
     );

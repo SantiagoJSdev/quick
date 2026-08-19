@@ -2,11 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { saleFunctionalAmount } from '../../common/reports/report-amounts';
 import { PrismaService } from '../../prisma/prisma.service';
+import { KpisService } from '../kpis/kpis.service';
 import { PosDeviceService } from '../pos-device/pos-device.service';
 import type {
   CloseCashSessionDto,
@@ -15,9 +17,12 @@ import type {
 
 @Injectable()
 export class CashSessionService {
+  private readonly logger = new Logger(CashSessionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly posDevice: PosDeviceService,
+    private readonly kpis: KpisService,
   ) {}
 
   async open(storeId: string, dto: OpenCashSessionDto) {
@@ -190,10 +195,25 @@ export class CashSessionService {
       },
     });
 
+    let capitalPhoto:
+      | { date: string; ok: true; netInventoryEquity: string }
+      | { ok: false };
+    try {
+      capitalPhoto = await this.kpis.captureTodayOnCashClose(storeId);
+    } catch (err) {
+      this.logger.warn(
+        `Capital snapshot after cash close failed store=${storeId} session=${sessionId}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      capitalPhoto = { ok: false };
+    }
+
     return {
       session: this.toPublic(updated),
       summary: live,
       warnings,
+      capitalPhoto,
     };
   }
 
