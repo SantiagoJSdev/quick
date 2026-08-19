@@ -15,6 +15,7 @@ import {
   type RealProfitConfig,
 } from './real-profit-config';
 import type { KpisSnapshotQueryDto } from './dto/kpis-snapshot-query.dto';
+import { resolveSaleListUtcRange } from '../sales/sales-list-range';
 
 const DEFAULT_LOW_UNITS = new Prisma.Decimal(5);
 const DEFAULT_LOW_KG = new Prisma.Decimal(3);
@@ -79,10 +80,11 @@ export class KpisService {
         ? store.timezone.trim()
         : 'UTC';
 
-    const [grossProfit, payables, stockAlerts] = await Promise.all([
+    const [grossProfit, payables, stockAlerts, capital] = await Promise.all([
       this.grossProfitForRange(storeId, range.startUtc, range.endUtc, zone),
       this.payablesByDay(storeId, zone),
       this.stockAlerts(storeId),
+      this.capitalLive(storeId, zone),
     ]);
 
     const cfg = resolveRealProfitConfig(
@@ -128,6 +130,7 @@ export class KpisService {
       ...(range.preset ? { preset: range.preset } : {}),
       grossProfit,
       realProfit,
+      capital,
       payables,
       stockAlerts,
     };
@@ -204,13 +207,29 @@ export class KpisService {
     const wrapUnit = new Prisma.Decimal(cfg.charcuterieWrap.unitCost);
     const wrapCost = wrapQty.mul(wrapUnit);
 
+    const lossAgg = await this.prisma.stockMovement.aggregate({
+      where: {
+        storeId,
+        type: 'OUT_LOSS',
+        createdAt: { gte: startUtc, lt: endUtc },
+      },
+      _sum: { totalCostFunctional: true },
+      _count: { _all: true },
+    });
+    const lossCost = lossAgg._sum.totalCostFunctional ?? new Prisma.Decimal(0);
+    const lossCount = lossAgg._count._all;
+
     const payrollOneDay = sumEmployeeDaily(cfg);
     const fixedOneDay = sumFixedDaily(cfg);
     const payroll = payrollOneDay.mul(daysDec);
     const fixed = fixedOneDay.mul(daysDec);
 
     const grossProfit = new Prisma.Decimal(gross.grossProfit);
-    const totalDeductions = bagCost.plus(wrapCost).plus(payroll).plus(fixed);
+    const totalDeductions = bagCost
+      .plus(wrapCost)
+      .plus(payroll)
+      .plus(fixed)
+      .plus(lossCost);
     const realProfit = grossProfit.minus(totalDeductions);
     const opsFullDay = payroll.plus(fixed);
     const warnings: string[] = [];
@@ -260,6 +279,10 @@ export class KpisService {
           days,
           amount: decimalToReportString(fixed),
         },
+        losses: {
+          amount: decimalToReportString(lossCost),
+          movementCount: lossCount,
+        },
         total: decimalToReportString(totalDeductions),
       },
       realProfit: decimalToReportString(realProfit),
@@ -283,9 +306,62 @@ export class KpisService {
         opsFullDayCharged: true,
         opsFullDayAmount: decimalToReportString(opsFullDay),
         formula:
-          'realProfit = grossProfit - bags - charcuterieWrap - payroll*days - fixed*days',
+          'realProfit = grossProfit - bags - charcuterieWrap - payroll*days - fixed*days - losses',
         warnings,
       },
+    };
+  }
+
+  /**
+   * Capital operativo ahora: inventario a costo − deuda abierta + merma de hoy (Caracas).
+   */
+  private async capitalLive(storeId: string, zone: string) {
+    const today = DateTime.now().setZone(zone).toISODate();
+    const todayBounds = resolveSaleListUtcRange(zone, today!, today!);
+
+    const [invAgg, payAgg, lossToday] = await Promise.all([
+      this.prisma.inventoryItem.aggregate({
+        where: {
+          storeId,
+          quantity: { gt: 0 },
+          product: { active: true },
+        },
+        _sum: { totalCostFunctional: true },
+      }),
+      this.prisma.purchase.aggregate({
+        where: {
+          storeId,
+          status: 'RECEIVED',
+          paymentStatus: { in: ['CREDIT', 'PARTIAL'] },
+          amountDueFunctional: { gt: 0 },
+        },
+        _sum: { amountDueFunctional: true },
+      }),
+      this.prisma.stockMovement.aggregate({
+        where: {
+          storeId,
+          type: 'OUT_LOSS',
+          createdAt: { gte: todayBounds.startUtc, lt: todayBounds.endUtc },
+        },
+        _sum: { totalCostFunctional: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const inventoryCapital =
+      invAgg._sum.totalCostFunctional ?? new Prisma.Decimal(0);
+    const payablesDue =
+      payAgg._sum.amountDueFunctional ?? new Prisma.Decimal(0);
+    const netInventoryEquity = inventoryCapital.minus(payablesDue);
+    const lossCostToday =
+      lossToday._sum.totalCostFunctional ?? new Prisma.Decimal(0);
+
+    return {
+      inventoryCapital: decimalToReportString(inventoryCapital),
+      payablesDue: decimalToReportString(payablesDue),
+      netInventoryEquity: decimalToReportString(netInventoryEquity),
+      lossCostToday: decimalToReportString(lossCostToday),
+      lossMovementCountToday: lossToday._count._all,
     };
   }
 

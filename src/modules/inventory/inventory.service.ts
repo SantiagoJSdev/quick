@@ -619,4 +619,129 @@ export class InventoryService {
 
     return { movementId: movement.id, status: 'applied' as const };
   }
+
+  registerLoss(
+    storeId: string,
+    dto: {
+      productId: string;
+      quantity: string;
+      reason: string;
+      opId?: string;
+    },
+  ) {
+    return this.prisma.$transaction((tx) =>
+      this.applyOutLossTx(tx, storeId, dto),
+    );
+  }
+
+  /**
+   * Baja por merma (`OUT_LOSS`). Costo = promedio actual. No deja qty por debajo
+   * de reserved (misma regla que OUT_ADJUST).
+   */
+  async applyOutLossTx(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    dto: {
+      productId: string;
+      quantity: string;
+      reason: string;
+      opId?: string;
+    },
+  ) {
+    const qtyMag = new Prisma.Decimal(dto.quantity);
+    if (!qtyMag.isFinite() || qtyMag.lte(0)) {
+      throw new BadRequestException('quantity must be a positive decimal');
+    }
+
+    if (dto.opId) {
+      const dup = await tx.stockMovement.findUnique({
+        where: { opId: dto.opId },
+      });
+      if (dup) {
+        if (dup.storeId !== storeId || dup.productId !== dto.productId) {
+          throw new BadRequestException(
+            'opId already used for another movement',
+          );
+        }
+        if (dup.type !== 'OUT_LOSS') {
+          throw new BadRequestException(
+            'opId already used for another movement',
+          );
+        }
+        return {
+          status: 'skipped' as const,
+          movementId: dup.id,
+          productId: dto.productId,
+          quantity: dup.quantity.toString(),
+          unitCostFunctional: dup.unitCostFunctional?.toString() ?? '0',
+          totalCostFunctional: dup.totalCostFunctional?.toString() ?? '0',
+        };
+      }
+    }
+
+    const product = await tx.product.findUnique({
+      where: { id: dto.productId },
+      select: { id: true, sku: true, name: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const item = await tx.inventoryItem.findUnique({
+      where: { productId_storeId: { productId: dto.productId, storeId } },
+    });
+    if (!item) {
+      throw new BadRequestException('No inventory line for product/store');
+    }
+
+    const available = item.quantity.minus(item.reserved);
+    if (available.lt(qtyMag)) {
+      throw new BadRequestException(
+        `Insufficient stock for loss (available ${available.toString()})`,
+      );
+    }
+
+    const avg = item.quantity.gt(0)
+      ? item.averageUnitCostFunctional
+      : new Prisma.Decimal(0);
+    const lineCost = avg.mul(qtyMag);
+    const newQty = item.quantity.minus(qtyMag);
+    const newTotal = avg.mul(newQty);
+    const newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
+
+    const movement = await tx.stockMovement.create({
+      data: {
+        opId: dto.opId ?? null,
+        productId: dto.productId,
+        storeId,
+        type: 'OUT_LOSS',
+        quantity: qtyMag,
+        unitCostFunctional: avg,
+        totalCostFunctional: lineCost,
+        reason: dto.reason.trim().slice(0, 240),
+      },
+    });
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        quantity: newQty,
+        totalCostFunctional: newTotal,
+        averageUnitCostFunctional: newAvg,
+        lastAdjustedAt: new Date(),
+      },
+    });
+
+    return {
+      status: 'applied' as const,
+      movementId: movement.id,
+      productId: product.id,
+      productSku: product.sku,
+      productName: product.name,
+      quantity: qtyMag.toString(),
+      unitCostFunctional: avg.toString(),
+      totalCostFunctional: lineCost.toString(),
+      quantityAfter: newQty.toString(),
+    };
+  }
 }

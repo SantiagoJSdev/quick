@@ -19,6 +19,7 @@ import {
 import type { Request } from 'express';
 import { InventoryAdjustDto } from './dto/inventory-adjust.dto';
 import { InventoryMovementsQueryDto } from './dto/inventory-movements-query.dto';
+import { RegisterInventoryLossDto } from './dto/register-inventory-loss.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('inventory')
@@ -52,6 +53,22 @@ export class InventoryController {
       query.productId,
       query.limit ?? 100,
     );
+  }
+
+  @Post('losses')
+  @ApiBody({ type: RegisterInventoryLossDto })
+  @ApiOkResponse({
+    description: 'Merma OUT_LOSS: baja stock a costo promedio (idempotente opId)',
+  })
+  async registerLoss(
+    @Req() req: Request,
+    @Body() dto: RegisterInventoryLossDto,
+  ) {
+    const storeId = req.storeContext?.storeId;
+    if (!storeId) {
+      throw new InternalServerErrorException('Missing store context');
+    }
+    return this.inventory.registerLoss(storeId, dto);
   }
 
   @Get(':productId')
