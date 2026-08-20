@@ -67,3 +67,9 @@ export const GASTO_PAYMENT_METHODS = [
     isCashLike: false,
   },
 ] as const;
+
+/**
+ * Paso 4 — % del efectivo neto del día que no se sugiere sacar (cambio / reposición).
+ * 0 = sin reserva oculta; subir aquí si el dueño quiere dejar plata en caja.
+ */
+export const GASTO_REPLENISH_RESERVE_PERCENT = '0';

@@ -67,7 +67,19 @@ export class PaymentMethodsService {
   }
 
   /** Mapa code → % / isCashLike (activos) para calcular comisión al cobrar. */
-  async activeCommissionMap(storeId: string) {
+  async activeCommissionMap(
+    storeId: string,
+  ): Promise<
+    Map<
+      string,
+      {
+        code: string;
+        commissionPercent: Prisma.Decimal;
+        isCashLike: boolean;
+        name: string;
+      }
+    >
+  > {
     await this.ensureDefaults(storeId);
     const rows = await this.prisma.storePaymentMethod.findMany({
       where: { storeId, active: true },

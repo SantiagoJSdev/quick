@@ -35,7 +35,7 @@ export class KpisController {
   @Get('snapshot')
   @ApiOkResponse({
     description:
-      'KPIs: ganancia bruta/real (rango), capital live, deuda, stock, merma OUT_LOSS',
+      'KPIs: ganancia bruta/real, capital live, cashAvailable (hoy), deuda, stock',
   })
   async snapshot(@Req() req: Request, @Query() query: KpisSnapshotQueryDto) {
     const storeId = req.storeContext?.storeId;

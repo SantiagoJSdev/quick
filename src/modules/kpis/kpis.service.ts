@@ -10,6 +10,7 @@ import {
   decimalToReportString,
   REPORT_SALE_STATUS,
 } from '../../common/reports/report-amounts';
+import { convertAmountDocumentToFunctional } from '../../common/fx/convert-amount';
 import { resolveReportUtcRange } from '../../common/dates/report-date-presets';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -20,6 +21,7 @@ import {
   ymdFromPrismaDate,
   type CapitalSnapshotSource,
 } from './capital-snapshot.util';
+import { GASTO_REPLENISH_RESERVE_PERCENT } from './gasto-constants';
 import {
   inclusiveCalendarDays,
   resolveRealProfitConfig,
@@ -29,6 +31,7 @@ import {
 } from './real-profit-config';
 import type { KpisCapitalSeriesQueryDto } from './dto/kpis-capital-series-query.dto';
 import type { KpisSnapshotQueryDto } from './dto/kpis-snapshot-query.dto';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { resolveSaleListUtcRange } from '../sales/sales-list-range';
 
 const DEFAULT_LOW_UNITS = new Prisma.Decimal(5);
@@ -53,7 +56,10 @@ function lineCost(
 export class KpisService {
   private readonly logger = new Logger(KpisService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paymentMethods: PaymentMethodsService,
+  ) {}
 
   async snapshot(storeId: string, query: KpisSnapshotQueryDto) {
     const store = await this.prisma.store.findUnique({
@@ -120,13 +126,26 @@ export class KpisService {
       },
     );
 
+    const cashAvailable = await this.cashAvailableToday(
+      storeId,
+      zone,
+      timezoneSource,
+      cfg,
+      {
+        dateFrom: range.meta.dateFrom,
+        dateTo: range.meta.dateTo,
+        realProfit: realProfit.realProfit,
+      },
+    );
+
     this.logger.log(
       `KPI snapshot store=${storeId} preset=${range.preset ?? 'custom'} ` +
         `tz=${range.meta.timezone}(${timezoneSource}) ` +
         `from=${range.meta.dateFrom} to=${range.meta.dateTo} ` +
         `utc=[${range.startUtc.toISOString()},${range.endUtc.toISOString()}) ` +
         `gross=${grossProfit.grossProfit} real=${realProfit.realProfit} ` +
-        `deduct=${realProfit.deductions.total}`,
+        `deduct=${realProfit.deductions.total} ` +
+        `cashAvail=${cashAvailable.amount} suggest=${cashAvailable.suggestedWithdraw}`,
     );
 
     return {
@@ -145,6 +164,7 @@ export class KpisService {
       grossProfit,
       realProfit,
       capital,
+      cashAvailable,
       payables,
       stockAlerts,
     };
@@ -505,7 +525,7 @@ export class KpisService {
     const lossCost = lossAgg._sum.totalCostFunctional ?? new Prisma.Decimal(0);
     const lossCount = lossAgg._count._all;
 
-    const commissionAgg = await this.prisma.salePayment.aggregate({
+    const commissionRows = await this.prisma.salePayment.findMany({
       where: {
         sale: {
           storeId,
@@ -513,12 +533,20 @@ export class KpisService {
           createdAt: { gte: startUtc, lt: endUtc },
         },
       },
-      _sum: { commissionFunctional: true },
-      _count: { _all: true },
+      select: {
+        id: true,
+        commissionFunctional: true,
+      } as { id: true; commissionFunctional: true },
     });
-    const paymentCommissions =
-      commissionAgg._sum.commissionFunctional ?? new Prisma.Decimal(0);
-    const paymentCommissionCount = commissionAgg._count._all;
+    let paymentCommissions = new Prisma.Decimal(0);
+    for (const row of commissionRows as Array<{
+      commissionFunctional: Prisma.Decimal | null;
+    }>) {
+      if (row.commissionFunctional != null) {
+        paymentCommissions = paymentCommissions.plus(row.commissionFunctional);
+      }
+    }
+    const paymentCommissionCount = commissionRows.length;
 
     const payrollOneDay = sumEmployeeDaily(cfg);
     const fixedOneDay = sumFixedDaily(cfg);
@@ -650,6 +678,230 @@ export class KpisService {
     };
   }
 
+  /**
+   * Disponible para sacar (siempre **hoy** en zona tienda, no sigue preset).
+   * No registra retiro; solo guía de caja.
+   */
+  private async cashAvailableToday(
+    storeId: string,
+    zone: string,
+    timezoneSource: 'store' | 'fallback_utc',
+    cfg: RealProfitConfig,
+    rangeReal: { dateFrom: string; dateTo: string; realProfit: string },
+  ) {
+    const todayYmd = DateTime.now().setZone(zone).toISODate()!;
+    const estimate = await this.estimateCashForDay(storeId, todayYmd, zone);
+
+    let realProfitToday = rangeReal.realProfit;
+    if (rangeReal.dateFrom !== todayYmd || rangeReal.dateTo !== todayYmd) {
+      const bounds = resolveSaleListUtcRange(zone, todayYmd, todayYmd);
+      const gross = await this.grossProfitForRange(
+        storeId,
+        bounds.startUtc,
+        bounds.endUtc,
+        zone,
+      );
+      const real = await this.realProfitForRange(
+        storeId,
+        bounds.startUtc,
+        bounds.endUtc,
+        todayYmd,
+        todayYmd,
+        gross,
+        cfg,
+        {
+          timezone: bounds.meta.timezone,
+          timezoneSource,
+          rangeInterpretation: bounds.meta.rangeInterpretation,
+          preset: 'today',
+        },
+      );
+      realProfitToday = real.realProfit;
+    }
+
+    const realDec = new Prisma.Decimal(realProfitToday);
+    const realNonNeg = realDec.gt(0) ? realDec : new Prisma.Decimal(0);
+    const suggested = Prisma.Decimal.min(realNonNeg, estimate.amount);
+
+    return {
+      asOf: todayYmd,
+      cashCollected: decimalToReportString(estimate.cashCollected),
+      supplierPayments: decimalToReportString(estimate.supplierPayments),
+      cashNet: decimalToReportString(estimate.cashNet),
+      replenishReservePercent: estimate.replenishReservePercent,
+      replenishReserve: decimalToReportString(estimate.replenishReserve),
+      amount: decimalToReportString(estimate.amount),
+      realProfitToday: decimalToReportString(realDec),
+      suggestedWithdraw: decimalToReportString(suggested),
+      explain: {
+        cashLikeMethods: estimate.cashLikeMethods,
+        formula:
+          'suggestedWithdraw = min(max(0, realProfitToday), max(0, cashCollected - supplierPayments - reserve))',
+        note: 'Solo guía de caja; no registra el retiro del dueño ni mueve inventario.',
+      },
+    };
+  }
+
+  private async estimateCashForDay(
+    storeId: string,
+    dateYmd: string,
+    zone: string,
+  ) {
+    const bounds = resolveSaleListUtcRange(zone, dateYmd, dateYmd);
+    const reservePct = new Prisma.Decimal(GASTO_REPLENISH_RESERVE_PERCENT);
+
+    const methodMap = await this.paymentMethods.activeCommissionMap(storeId);
+    const cashLikeMethods: string[] = [];
+    methodMap.forEach(
+      (
+        m: {
+          code: string;
+          commissionPercent: Prisma.Decimal;
+          isCashLike: boolean;
+          name: string;
+        },
+        code: string,
+      ) => {
+        if (m.isCashLike) {
+          cashLikeMethods.push(code);
+        }
+      },
+    );
+
+    const [payments, supplierAgg, settings] = await Promise.all([
+      cashLikeMethods.length === 0
+        ? Promise.resolve([])
+        : this.prisma.salePayment.findMany({
+            where: {
+              method: { in: cashLikeMethods },
+              sale: {
+                storeId,
+                status: REPORT_SALE_STATUS,
+                createdAt: { gte: bounds.startUtc, lt: bounds.endUtc },
+              },
+            },
+            select: {
+              amount: true,
+              currencyCode: true,
+              amountDocumentCurrency: true,
+              amountFunctional: true,
+              sale: {
+                select: {
+                  documentCurrencyCode: true,
+                  functionalCurrencyCode: true,
+                  fxBaseCurrencyCode: true,
+                  fxQuoteCurrencyCode: true,
+                  fxRateQuotePerBase: true,
+                },
+              },
+            } as {
+              amount: true;
+              currencyCode: true;
+              amountDocumentCurrency: true;
+              amountFunctional: true;
+              sale: {
+                select: {
+                  documentCurrencyCode: true;
+                  functionalCurrencyCode: true;
+                  fxBaseCurrencyCode: true;
+                  fxQuoteCurrencyCode: true;
+                  fxRateQuotePerBase: true;
+                };
+              };
+            },
+          }),
+      this.prisma.purchasePayment.aggregate({
+        where: {
+          storeId,
+          reversedAt: null,
+          paidAt: { gte: bounds.startUtc, lt: bounds.endUtc },
+        },
+        _sum: { amountFunctional: true },
+      }),
+      this.prisma.businessSettings.findUnique({
+        where: { storeId },
+        include: { functionalCurrency: true },
+      }),
+    ]);
+
+    const funcCode =
+      settings?.functionalCurrency.code.toUpperCase() ?? 'USD';
+
+    let cashCollected = new Prisma.Decimal(0);
+    for (const p of payments) {
+      cashCollected = cashCollected.plus(
+        this.salePaymentAmountFunctional(p, funcCode),
+      );
+    }
+
+    const supplierPayments =
+      supplierAgg._sum.amountFunctional ?? new Prisma.Decimal(0);
+    const cashNet = cashCollected.minus(supplierPayments);
+    const replenishReserve = cashNet.gt(0)
+      ? cashNet.mul(reservePct).div(100)
+      : new Prisma.Decimal(0);
+    const amount = Prisma.Decimal.max(
+      0,
+      cashNet.minus(replenishReserve),
+    );
+
+    return {
+      cashLikeMethods,
+      cashCollected,
+      supplierPayments,
+      cashNet,
+      replenishReservePercent: decimalToReportString(reservePct),
+      replenishReserve,
+      amount,
+    };
+  }
+
+  private salePaymentAmountFunctional(
+    p: {
+      amount: Prisma.Decimal;
+      currencyCode: string;
+      amountDocumentCurrency: Prisma.Decimal;
+      amountFunctional: Prisma.Decimal | null;
+      sale: {
+        documentCurrencyCode: string | null;
+        functionalCurrencyCode: string | null;
+        fxBaseCurrencyCode: string | null;
+        fxQuoteCurrencyCode: string | null;
+        fxRateQuotePerBase: Prisma.Decimal | null;
+      };
+    },
+    funcCode: string,
+  ): Prisma.Decimal {
+    if (p.amountFunctional != null) {
+      return p.amountFunctional;
+    }
+    const saleFunc =
+      p.sale.functionalCurrencyCode?.toUpperCase() ?? funcCode;
+    if (p.currencyCode.toUpperCase() === saleFunc) {
+      return p.amount;
+    }
+    const docCode = (
+      p.sale.documentCurrencyCode?.toUpperCase() ?? saleFunc
+    );
+    if (docCode === saleFunc) {
+      return p.amountDocumentCurrency;
+    }
+    const base = p.sale.fxBaseCurrencyCode?.toUpperCase();
+    const quote = p.sale.fxQuoteCurrencyCode?.toUpperCase();
+    const rate = p.sale.fxRateQuotePerBase;
+    if (!base || !quote || rate == null) {
+      return p.amountDocumentCurrency;
+    }
+    return convertAmountDocumentToFunctional(
+      p.amountDocumentCurrency,
+      docCode,
+      saleFunc,
+      base,
+      quote,
+      rate,
+    );
+  }
+
   private async inventoryEquityNow(storeId: string) {
     const [invAgg, payAgg] = await Promise.all([
       this.prisma.inventoryItem.aggregate({
@@ -756,6 +1008,11 @@ export class KpisService {
       real.deductions.paymentCommissions.amount,
     );
 
+    const cashEst = await this.estimateCashForDay(storeId, dateYmd, zone);
+    const realDec = new Prisma.Decimal(real.realProfit);
+    const realNonNeg = realDec.gt(0) ? realDec : new Prisma.Decimal(0);
+    const suggested = Prisma.Decimal.min(realNonNeg, cashEst.amount);
+
     return {
       inventoryCapital: equity.inventoryCapital,
       payablesDue: equity.payablesDue,
@@ -763,12 +1020,14 @@ export class KpisService {
       netSales: new Prisma.Decimal(gross.netSales),
       cogs: new Prisma.Decimal(gross.cogs),
       grossProfit: new Prisma.Decimal(gross.grossProfit),
-      realProfit: new Prisma.Decimal(real.realProfit),
+      realProfit: realDec,
       realProfitDeductions: real.deductions as unknown as Prisma.InputJsonValue,
       purchasesFunctional,
       supplierPayments,
       lossCostFunctional: lossCost,
       paymentCommissions,
+      cashBalanceEst: cashEst.cashNet,
+      cashAvailableEst: suggested,
     };
   }
 
@@ -820,6 +1079,8 @@ export class KpisService {
     purchasesFunctional: Prisma.Decimal;
     supplierPayments: Prisma.Decimal;
     paymentCommissions: Prisma.Decimal | null;
+    cashBalanceEst: Prisma.Decimal | null;
+    cashAvailableEst: Prisma.Decimal | null;
     source: string;
     capturedAt: Date;
   }) {
@@ -838,6 +1099,14 @@ export class KpisService {
       paymentCommissions:
         row.paymentCommissions != null
           ? decimalToReportString(row.paymentCommissions)
+          : null,
+      cashBalanceEst:
+        row.cashBalanceEst != null
+          ? decimalToReportString(row.cashBalanceEst)
+          : null,
+      cashAvailableEst:
+        row.cashAvailableEst != null
+          ? decimalToReportString(row.cashAvailableEst)
           : null,
       source: row.source,
       capturedAt: row.capturedAt.toISOString(),
