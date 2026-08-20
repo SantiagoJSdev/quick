@@ -505,6 +505,21 @@ export class KpisService {
     const lossCost = lossAgg._sum.totalCostFunctional ?? new Prisma.Decimal(0);
     const lossCount = lossAgg._count._all;
 
+    const commissionAgg = await this.prisma.salePayment.aggregate({
+      where: {
+        sale: {
+          storeId,
+          status: REPORT_SALE_STATUS,
+          createdAt: { gte: startUtc, lt: endUtc },
+        },
+      },
+      _sum: { commissionFunctional: true },
+      _count: { _all: true },
+    });
+    const paymentCommissions =
+      commissionAgg._sum.commissionFunctional ?? new Prisma.Decimal(0);
+    const paymentCommissionCount = commissionAgg._count._all;
+
     const payrollOneDay = sumEmployeeDaily(cfg);
     const fixedOneDay = sumFixedDaily(cfg);
     const payroll = payrollOneDay.mul(daysDec);
@@ -515,7 +530,8 @@ export class KpisService {
       .plus(wrapCost)
       .plus(payroll)
       .plus(fixed)
-      .plus(lossCost);
+      .plus(lossCost)
+      .plus(paymentCommissions);
     const realProfit = grossProfit.minus(totalDeductions);
     const opsFullDay = payroll.plus(fixed);
     const warnings: string[] = [];
@@ -569,6 +585,10 @@ export class KpisService {
           amount: decimalToReportString(lossCost),
           movementCount: lossCount,
         },
+        paymentCommissions: {
+          amount: decimalToReportString(paymentCommissions),
+          paymentCount: paymentCommissionCount,
+        },
         total: decimalToReportString(totalDeductions),
       },
       realProfit: decimalToReportString(realProfit),
@@ -592,7 +612,7 @@ export class KpisService {
         opsFullDayCharged: true,
         opsFullDayAmount: decimalToReportString(opsFullDay),
         formula:
-          'realProfit = grossProfit - bags - charcuterieWrap - payroll*days - fixed*days - losses',
+          'realProfit = grossProfit - bags - charcuterieWrap - payroll*days - fixed*days - losses - paymentCommissions',
         warnings,
       },
     };
@@ -732,6 +752,9 @@ export class KpisService {
     const supplierPayments =
       paymentsAgg._sum.amountFunctional ?? new Prisma.Decimal(0);
     const lossCost = new Prisma.Decimal(real.deductions.losses.amount);
+    const paymentCommissions = new Prisma.Decimal(
+      real.deductions.paymentCommissions.amount,
+    );
 
     return {
       inventoryCapital: equity.inventoryCapital,
@@ -745,6 +768,7 @@ export class KpisService {
       purchasesFunctional,
       supplierPayments,
       lossCostFunctional: lossCost,
+      paymentCommissions,
     };
   }
 

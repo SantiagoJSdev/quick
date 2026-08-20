@@ -18,6 +18,7 @@ import { OpsModule } from './modules/ops/ops.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { CashSessionModule } from './modules/cash-session/cash-session.module';
 import { KpisModule } from './modules/kpis/kpis.module';
+import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ReportsModule,
     CashSessionModule,
     KpisModule,
+    PaymentMethodsModule,
   ],
   controllers: [AppController],
   providers: [

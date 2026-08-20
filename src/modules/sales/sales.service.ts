@@ -13,6 +13,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { PosDeviceService } from '../pos-device/pos-device.service';
 import { salePaymentTx } from '../../common/payments/sale-payment.tx';
 import { salePaymentPrisma } from '../../common/payments/sale-payment.prisma';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import type { CreateSaleDto } from './dto/create-sale.dto';
 import type { SalesListQueryDto } from './dto/sales-list-query.dto';
 import { decodeSaleListCursor, encodeSaleListCursor } from './sales-list-cursor';
@@ -31,6 +32,7 @@ export class SalesService {
     private readonly storeFx: StoreFxSnapshotService,
     private readonly inventory: InventoryService,
     private readonly posDevice: PosDeviceService,
+    private readonly paymentMethods: PaymentMethodsService,
   ) {}
 
   /** Confirmación de venta + líneas + `OUT_SALE` + descuento inventario (una transacción). */
@@ -230,11 +232,21 @@ export class SalesService {
       totalFunc = totalFunc.plus(lineTotalFunctional);
     }
 
-    const paymentCreates = this.buildSalePaymentCreates(dto, {
-      docCode,
-      fx,
-      totalDoc,
-    });
+    const paymentMethodMap = await this.paymentMethods.activeCommissionMap(
+      storeId,
+    );
+
+    const paymentCreates = this.buildSalePaymentCreates(
+      dto,
+      {
+        docCode,
+        funcCode,
+        fx,
+        totalDoc,
+      },
+      paymentMethodMap,
+      warnings,
+    );
 
     let deviceId: string | null = null;
     if (dto.deviceId != null && dto.deviceId.trim() !== '') {
@@ -284,6 +296,9 @@ export class SalesService {
           amount: p.amount,
           currencyCode: p.currencyCode,
           amountDocumentCurrency: p.amountDocumentCurrency,
+          amountFunctional: p.amountFunctional,
+          commissionPercentApplied: p.commissionPercentApplied,
+          commissionFunctional: p.commissionFunctional,
           fxBaseCurrencyCode: p.fxBaseCurrencyCode,
           fxQuoteCurrencyCode: p.fxQuoteCurrencyCode,
           fxRateQuotePerBase: p.fxRateQuotePerBase,
@@ -327,12 +342,36 @@ export class SalesService {
 
   private buildSalePaymentCreates(
     dto: CreateSaleDto,
-    ctx: { docCode: string; fx: ResolvedFxSnapshot; totalDoc: Prisma.Decimal },
+    ctx: {
+      docCode: string;
+      funcCode: string;
+      fx: ResolvedFxSnapshot;
+      totalDoc: Prisma.Decimal;
+    },
+    paymentMethodMap: Map<
+      string,
+      {
+        code: string;
+        commissionPercent: Prisma.Decimal;
+        isCashLike: boolean;
+        name: string;
+      }
+    >,
+    warnings: Array<{
+      code: string;
+      productId?: string;
+      message: string;
+      availableBefore?: string;
+      quantityAfter?: string;
+    }>,
   ): Array<{
     method: string;
     amount: Prisma.Decimal;
     currencyCode: string;
     amountDocumentCurrency: Prisma.Decimal;
+    amountFunctional: Prisma.Decimal;
+    commissionPercentApplied: Prisma.Decimal;
+    commissionFunctional: Prisma.Decimal;
     fxBaseCurrencyCode: string | null;
     fxQuoteCurrencyCode: string | null;
     fxRateQuotePerBase: Prisma.Decimal | null;
@@ -345,12 +384,16 @@ export class SalesService {
     }
 
     const docCode = ctx.docCode.toUpperCase();
+    const funcCode = ctx.funcCode.toUpperCase();
     let sumDoc = new Prisma.Decimal(0);
     const creates: Array<{
       method: string;
       amount: Prisma.Decimal;
       currencyCode: string;
       amountDocumentCurrency: Prisma.Decimal;
+      amountFunctional: Prisma.Decimal;
+      commissionPercentApplied: Prisma.Decimal;
+      commissionFunctional: Prisma.Decimal;
       fxBaseCurrencyCode: string | null;
       fxQuoteCurrencyCode: string | null;
       fxRateQuotePerBase: Prisma.Decimal | null;
@@ -426,12 +469,40 @@ export class SalesService {
         }
       }
 
+      const amountFunctional = this.paymentAmountToFunctional({
+        amount,
+        currencyCode,
+        amountDocumentCurrency,
+        docCode,
+        funcCode,
+        fxBase: ctx.fx.fxBaseCurrencyCode,
+        fxQuote: ctx.fx.fxQuoteCurrencyCode,
+        fxRate: ctx.fx.fxRateQuotePerBase,
+      });
+
+      const catalog = paymentMethodMap.get(method);
+      let commissionPercentApplied = new Prisma.Decimal(0);
+      if (catalog) {
+        commissionPercentApplied = catalog.commissionPercent;
+      } else {
+        warnings.push({
+          code: 'PAYMENT_METHOD_UNKNOWN',
+          message: `Payment method "${method}" is not in the store catalog; commission treated as 0. Use GET /payment-methods.`,
+        });
+      }
+      const commissionFunctional = amountFunctional
+        .mul(commissionPercentApplied)
+        .div(100);
+
       sumDoc = sumDoc.plus(amountDocumentCurrency);
       creates.push({
         method,
         amount,
         currencyCode,
         amountDocumentCurrency,
+        amountFunctional,
+        commissionPercentApplied,
+        commissionFunctional,
         fxBaseCurrencyCode: currencyCode !== docCode ? fxBase : null,
         fxQuoteCurrencyCode: currencyCode !== docCode ? fxQuote : null,
         fxRateQuotePerBase: currencyCode !== docCode ? fxRate : null,
@@ -466,6 +537,32 @@ export class SalesService {
     }
 
     return creates;
+  }
+
+  private paymentAmountToFunctional(input: {
+    amount: Prisma.Decimal;
+    currencyCode: string;
+    amountDocumentCurrency: Prisma.Decimal;
+    docCode: string;
+    funcCode: string;
+    fxBase: string;
+    fxQuote: string;
+    fxRate: Prisma.Decimal;
+  }): Prisma.Decimal {
+    if (input.currencyCode === input.funcCode) {
+      return input.amount;
+    }
+    if (input.docCode === input.funcCode) {
+      return input.amountDocumentCurrency;
+    }
+    return convertAmountDocumentToFunctional(
+      input.amountDocumentCurrency,
+      input.docCode,
+      input.funcCode,
+      input.fxBase.toUpperCase(),
+      input.fxQuote.toUpperCase(),
+      input.fxRate,
+    );
   }
 
   private attachPaymentSummary<T extends SaleWithPayments>(row: T) {

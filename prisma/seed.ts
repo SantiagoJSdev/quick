@@ -72,6 +72,30 @@ async function main() {
     });
   }
 
+  const { GASTO_PAYMENT_METHODS } = await import(
+    '../src/modules/kpis/gasto-constants'
+  );
+  for (const store of stores) {
+    for (let i = 0; i < GASTO_PAYMENT_METHODS.length; i++) {
+      const m = GASTO_PAYMENT_METHODS[i];
+      await prisma.storePaymentMethod.upsert({
+        where: {
+          storeId_code: { storeId: store.id, code: m.code },
+        },
+        create: {
+          storeId: store.id,
+          code: m.code,
+          name: m.name,
+          commissionPercent: new Prisma.Decimal(m.commissionPercent),
+          isCashLike: m.isCashLike,
+          active: true,
+          sortOrder: (i + 1) * 10,
+        },
+        update: {},
+      });
+    }
+  }
+
   const today = utcDateOnly(new Date());
 
   if (stores.length > 0) {

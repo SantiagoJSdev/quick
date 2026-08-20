@@ -39,7 +39,8 @@ export class CreateSaleLineDto {
 export class SalePaymentInputDto {
   @ApiProperty({
     example: 'CASH_USD',
-    description: 'Método de pago (ej. CASH_USD, CASH_VES, CARD).',
+    description:
+      'Código del catálogo GET /payment-methods (CASH_USD, CASH_VES, DEBITO_BDV, DEBITO_BNC).',
   })
   @IsString()
   @MinLength(1)
