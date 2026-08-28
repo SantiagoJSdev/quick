@@ -27,22 +27,26 @@ export type PaymentMethodPublic = {
 export class PaymentMethodsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Si la tienda no tiene catálogo, siembra GASTO_PAYMENT_METHODS. */
+  /** Siembra GASTO_PAYMENT_METHODS faltantes (idempotente; no pisa métodos ya creados). */
   async ensureDefaults(storeId: string): Promise<void> {
-    const count = await this.prisma.storePaymentMethod.count({
+    const existing = await this.prisma.storePaymentMethod.findMany({
       where: { storeId },
+      select: { code: true },
     });
-    if (count > 0) return;
+    const have = new Set(existing.map((e) => e.code));
+    const missing = GASTO_PAYMENT_METHODS.filter((m) => !have.has(m.code));
+    if (missing.length === 0) return;
 
     await this.prisma.storePaymentMethod.createMany({
-      data: GASTO_PAYMENT_METHODS.map((m, i) => ({
+      data: missing.map((m) => ({
         storeId,
         code: m.code,
         name: m.name,
         commissionPercent: new Prisma.Decimal(m.commissionPercent),
         isCashLike: m.isCashLike,
         active: true,
-        sortOrder: (i + 1) * 10,
+        sortOrder:
+          (GASTO_PAYMENT_METHODS.findIndex((x) => x.code === m.code) + 1) * 10,
       })),
       skipDuplicates: true,
     });

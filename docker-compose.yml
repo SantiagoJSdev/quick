@@ -1,24 +1,47 @@
-version: "3.8"
+# Solo desarrollo / prueba local. Producción = Neon + Render (NO usa este archivo).
+#
+# Uso:
+#   1. npm run db:docker:up
+#   2. En .env activa la URL Docker (comenta Neon)
+#   3. npm run db:local:migrate
+#   4. (opcional) npm run db:local:import   ← carga quickmarket_data.sql
+#   5. npm run start:dev
+#
+# pgAdmin: http://localhost:8080  (admin@local / admin)
+# Host DB en pgAdmin: quickmarket-postgres  (desde la red Docker)
+#                   o host.docker.internal / localhost puerto 5433 (desde Windows)
+
 services:
   db:
-    image: postgres:15
-    container_name: gemini-postgres
+    image: postgres:16
+    container_name: quickmarket-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: gemini
+      POSTGRES_DB: quickmarket
     ports:
-      - "5432:5432"
+      # 5433 en el host: evita choque con PostgreSQL 18 nativo en 5432
+      - "5433:5432"
     volumes:
-      - C:\Users\GUEST\postgres-data:/var/lib/postgresql/data
+      - quickmarket_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d quickmarket"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   pgadmin:
-    image: dpage/pgadmin4
-    container_name: gemini-pgadmin
+    image: dpage/pgadmin4:8
+    container_name: quickmarket-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@local
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
       - "8080:80"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+
+volumes:
+  quickmarket_pgdata:

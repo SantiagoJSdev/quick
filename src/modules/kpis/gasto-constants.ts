@@ -66,6 +66,12 @@ export const GASTO_PAYMENT_METHODS = [
     commissionPercent: '2.0',
     isCashLike: false,
   },
+  {
+    code: 'PAGO_MOVIL',
+    name: 'Pago Móvil',
+    commissionPercent: '0',
+    isCashLike: false,
+  },
 ] as const;
 
 /**

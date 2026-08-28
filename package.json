@@ -22,7 +22,12 @@
     "test:integration": "cross-env RUN_INTEGRATION=1 jest",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
-    "db:reset:dev": "cross-env ALLOW_DEV_DB_RESET=1 ts-node --transpile-only scripts/dev-reset-databases.ts"
+    "db:reset:dev": "cross-env ALLOW_DEV_DB_RESET=1 ts-node --transpile-only scripts/dev-reset-databases.ts",
+    "db:docker:up": "docker compose up -d",
+    "db:docker:down": "docker compose down",
+    "db:docker:logs": "docker compose logs -f db",
+    "db:local:migrate": "prisma migrate deploy",
+    "db:local:import": "ts-node --transpile-only scripts/import-local-dump.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
