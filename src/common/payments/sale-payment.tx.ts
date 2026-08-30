@@ -6,6 +6,9 @@ type SalePaymentCreateManyData = {
   amount: Prisma.Decimal;
   currencyCode: string;
   amountDocumentCurrency: Prisma.Decimal;
+  amountFunctional?: Prisma.Decimal | null;
+  commissionPercentApplied?: Prisma.Decimal | null;
+  commissionFunctional?: Prisma.Decimal;
   fxBaseCurrencyCode: string | null;
   fxQuoteCurrencyCode: string | null;
   fxRateQuotePerBase: Prisma.Decimal | null;
@@ -29,6 +32,9 @@ export function salePaymentTx(tx: Prisma.TransactionClient) {
             amount: Prisma.Decimal;
             currencyCode: string;
             amountDocumentCurrency: Prisma.Decimal;
+            amountFunctional: Prisma.Decimal | null;
+            commissionPercentApplied: Prisma.Decimal | null;
+            commissionFunctional: Prisma.Decimal;
             fxBaseCurrencyCode: string | null;
             fxQuoteCurrencyCode: string | null;
             fxRateQuotePerBase: Prisma.Decimal | null;

@@ -50,6 +50,12 @@ lerna-debug.log*
 # Local product image uploads (dev disk driver)
 /storage
 
+# Local DB dumps / import helpers (no subir data real)
+quickmarket_data.sql
+quickmarket_data.sanitized.sql
+quickmarket_full.sql
+import_wrapper.sql
+
 # Runtime data
 pids
 *.pid

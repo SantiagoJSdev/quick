@@ -384,9 +384,33 @@ model Store {
   idempotencyRecords IdempotencyRecord[]
   cashSessions     CashSession[]
   purchasePayments PurchasePayment[]
+  capitalSnapshots StoreCapitalSnapshot[]
+  paymentMethods   StorePaymentMethod[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Catálogo de métodos de pago por tienda (POS + % comisión sobre monto funcional).
+model StorePaymentMethod {
+  id                String  @id @default(uuid())
+  storeId           String
+  store             Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  /// Código exacto que envía el POS en SalePayment.method (ej. DEBITO_BDV).
+  code              String
+  name              String
+  /// % sobre amountFunctional (ej. 2.1 = 2.1%).
+  commissionPercent Decimal @default(0) @db.Decimal(10, 4)
+  /// Cuenta como efectivo para “disponible para sacar” (Paso 4).
+  isCashLike        Boolean @default(false)
+  active            Boolean @default(true)
+  sortOrder         Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, code])
+  @@index([storeId, active])
 }
 
 /// Respuestas cacheadas para cabecera `Idempotency-Key` (p. ej. `POST /products-with-stock`).
@@ -479,6 +503,12 @@ model SalePayment {
   amount               Decimal  @db.Decimal(65, 30)
   currencyCode         String
   amountDocumentCurrency Decimal @db.Decimal(65, 30)
+  /// Monto del tramo en moneda funcional (para comisión / caja).
+  amountFunctional     Decimal? @db.Decimal(65, 30)
+  /// % aplicado al cobrar (foto; no cambia si mañana editan el catálogo).
+  commissionPercentApplied Decimal? @db.Decimal(10, 4)
+  /// Comisión en funcional = amountFunctional × (commissionPercentApplied / 100).
+  commissionFunctional Decimal  @default(0) @db.Decimal(65, 30)
   fxBaseCurrencyCode   String?
   fxQuoteCurrencyCode  String?
   fxRateQuotePerBase   Decimal? @db.Decimal(30, 10)
@@ -629,5 +659,47 @@ model CashSession {
 
   @@index([storeId, deviceId, status])
   @@index([storeId, openedAt])
+}
+
+/// Foto diaria de patrimonio (1 por tienda por día calendario en Store.timezone).
+/// Inventario/deuda = al momento del upsert (cierre de caja / run / lazy).
+/// realProfit y flujos del día se pueden recalcular al leer la serie.
+model StoreCapitalSnapshot {
+  id      String @id @default(uuid())
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  /// Día local YYYY-MM-DD (medianoche UTC en columna DATE).
+  date    DateTime @db.Date
+
+  inventoryCapital   Decimal @db.Decimal(65, 30)
+  payablesDue        Decimal @db.Decimal(65, 30)
+  netInventoryEquity Decimal @db.Decimal(65, 30)
+
+  netSales    Decimal @db.Decimal(65, 30)
+  cogs        Decimal @db.Decimal(65, 30)
+  grossProfit Decimal @db.Decimal(65, 30)
+  realProfit  Decimal @db.Decimal(65, 30)
+  /// Copia del desglose (bolsas, nómina, mermas…).
+  realProfitDeductions Json?
+
+  purchasesFunctional Decimal @default(0) @db.Decimal(65, 30)
+  supplierPayments    Decimal @default(0) @db.Decimal(65, 30)
+  lossCostFunctional  Decimal @default(0) @db.Decimal(65, 30)
+  /// Paso 3 — comisiones de métodos de pago.
+  paymentCommissions  Decimal? @db.Decimal(65, 30)
+
+  /// Paso 4 — estimado de caja / disponible para sacar.
+  cashBalanceEst   Decimal? @db.Decimal(65, 30)
+  cashAvailableEst Decimal? @db.Decimal(65, 30)
+
+  capturedAt DateTime @default(now())
+  /// CASH_CLOSE | LAZY | MANUAL
+  source     String   @default("MANUAL")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, date])
+  @@index([storeId, date])
 }
 

@@ -90,7 +90,7 @@ export class CashSessionController {
   @ApiBody({ type: CloseCashSessionDto })
   @ApiOkResponse({
     description:
-      'Cierra el turno. Permite OFFLINE con pendingSales[]. No borra cola del dispositivo.',
+      'Cierra el turno. Side-effect: upsert foto de patrimonio del día (capitalPhoto). Si el snapshot falla, el cierre igual queda CLOSED.',
   })
   async close(
     @Req() req: Request,

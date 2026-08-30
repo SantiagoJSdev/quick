@@ -30,6 +30,7 @@ describe('InventoryService.applyOutSaleLineTx', () => {
       product: {
         findUnique: jest.fn().mockResolvedValue({
           id: productId,
+          cost: new Prisma.Decimal('5'),
           blockSaleWithoutStock: opts.blockSaleWithoutStock ?? false,
         }),
       },

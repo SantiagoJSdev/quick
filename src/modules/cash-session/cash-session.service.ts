@@ -2,22 +2,33 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CashSession } from '@prisma/client';
 import { saleFunctionalAmount } from '../../common/reports/report-amounts';
 import { PrismaService } from '../../prisma/prisma.service';
+import { KpisService } from '../kpis/kpis.service';
 import { PosDeviceService } from '../pos-device/pos-device.service';
 import type {
   CloseCashSessionDto,
   OpenCashSessionDto,
 } from './dto/cash-session.dto';
 
+/** Máximo lookback para `clientOpenedAt` (apertura offline → sync tarde). */
+const CLIENT_OPENED_AT_MAX_AGE_MS = 36 * 60 * 60 * 1000;
+/** Holgura hacia el futuro (reloj del POS un poco adelantado). */
+const CLIENT_OPENED_AT_FUTURE_SKEW_MS = 2 * 60 * 1000;
+
 @Injectable()
 export class CashSessionService {
+  private readonly logger = new Logger(CashSessionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly posDevice: PosDeviceService,
+    private readonly kpis: KpisService,
   ) {}
 
   async open(storeId: string, dto: OpenCashSessionDto) {
@@ -32,20 +43,15 @@ export class CashSessionService {
       });
     });
 
+    const openingCash = this.parseOpeningCashOptional(dto.openingCash);
+    const clientOpenedAt = this.parseClientOpenedAtOptional(dto.clientOpenedAt);
+
     const existing = await this.prisma.cashSession.findFirst({
       where: { storeId, deviceId, status: 'OPEN' },
       orderBy: { openedAt: 'desc' },
     });
     if (existing) {
-      return this.toPublic(existing);
-    }
-
-    let openingCash: Prisma.Decimal | null = null;
-    if (dto.openingCash != null && dto.openingCash.trim() !== '') {
-      openingCash = new Prisma.Decimal(dto.openingCash);
-      if (!openingCash.isFinite() || openingCash.lt(0)) {
-        throw new BadRequestException('openingCash must be a non-negative decimal');
-      }
+      return this.claimOrReturnOpen(existing, openingCash, clientOpenedAt);
     }
 
     const row = await this.prisma.cashSession.create({
@@ -54,9 +60,87 @@ export class CashSessionService {
         deviceId,
         status: 'OPEN',
         openingCash,
+        ...(clientOpenedAt ? { openedAt: clientOpenedAt } : {}),
       },
     });
     return this.toPublic(row);
+  }
+
+  /**
+   * OPEN existente:
+   * - openingCash null/0 + body con monto ≥ 0 → escribe fondo (zombie claim).
+   * - openingCash ya ≠ 0 → no pisa el fondo.
+   * - En claim (fondo era 0/null), si viene clientOpenedAt → también ajusta openedAt.
+   */
+  private async claimOrReturnOpen(
+    existing: CashSession,
+    openingCash: Prisma.Decimal | null,
+    clientOpenedAt: Date | null,
+  ) {
+    const currentIsZero =
+      existing.openingCash == null || existing.openingCash.eq(0);
+    const shouldClaimCash =
+      currentIsZero && openingCash != null && openingCash.gte(0);
+    const shouldClaimOpenedAt = currentIsZero && clientOpenedAt != null;
+
+    if (!shouldClaimCash && !shouldClaimOpenedAt) {
+      return this.toPublic(existing);
+    }
+
+    const updated = await this.prisma.cashSession.update({
+      where: { id: existing.id },
+      data: {
+        ...(shouldClaimCash ? { openingCash } : {}),
+        ...(shouldClaimOpenedAt ? { openedAt: clientOpenedAt } : {}),
+      },
+    });
+    this.logger.log(
+      `Cash session claim device=${existing.deviceId} id=${existing.id}` +
+        (shouldClaimCash ? ` openingCash=${openingCash!.toString()}` : '') +
+        (shouldClaimOpenedAt
+          ? ` openedAt=${clientOpenedAt!.toISOString()}`
+          : ''),
+    );
+    return this.toPublic(updated);
+  }
+
+  private parseOpeningCashOptional(
+    raw: string | undefined,
+  ): Prisma.Decimal | null {
+    if (raw == null || raw.trim() === '') {
+      return null;
+    }
+    const openingCash = new Prisma.Decimal(raw);
+    if (!openingCash.isFinite() || openingCash.lt(0)) {
+      throw new BadRequestException(
+        'openingCash must be a non-negative decimal',
+      );
+    }
+    return openingCash;
+  }
+
+  private parseClientOpenedAtOptional(raw: string | undefined): Date | null {
+    if (raw == null || raw.trim() === '') {
+      return null;
+    }
+    const trimmed = raw.trim();
+    const ms = Date.parse(trimmed);
+    if (!Number.isFinite(ms)) {
+      throw new BadRequestException(
+        'clientOpenedAt must be a valid ISO-8601 datetime',
+      );
+    }
+    const opened = new Date(ms);
+    const now = Date.now();
+    if (ms > now + CLIENT_OPENED_AT_FUTURE_SKEW_MS) {
+      throw new BadRequestException('clientOpenedAt cannot be in the future');
+    }
+    if (now - ms > CLIENT_OPENED_AT_MAX_AGE_MS) {
+      throw new BadRequestException(
+        'clientOpenedAt cannot be more than 36 hours in the past',
+      );
+    }
+    return opened;
   }
 
   async findCurrent(storeId: string, deviceId: string) {
@@ -190,10 +274,25 @@ export class CashSessionService {
       },
     });
 
+    let capitalPhoto:
+      | { date: string; ok: true; netInventoryEquity: string }
+      | { ok: false };
+    try {
+      capitalPhoto = await this.kpis.captureTodayOnCashClose(storeId);
+    } catch (err) {
+      this.logger.warn(
+        `Capital snapshot after cash close failed store=${storeId} session=${sessionId}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      capitalPhoto = { ok: false };
+    }
+
     return {
       session: this.toPublic(updated),
       summary: live,
       warnings,
+      capitalPhoto,
     };
   }
 

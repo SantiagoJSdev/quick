@@ -31,6 +31,16 @@ export class OpenCashSessionDto {
   @IsNumberString()
   openingCash?: string;
 
+  @ApiPropertyOptional({
+    example: '2026-08-29T12:00:00.000Z',
+    description:
+      'Hora real de apertura en el POS (ISO-8601 UTC). Si viene, se usa como openedAt (máx. 36 h atrás, no futuro).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  clientOpenedAt?: string;
+
   @ApiPropertyOptional({ example: '1.0.0' })
   @IsOptional()
   @IsString()
