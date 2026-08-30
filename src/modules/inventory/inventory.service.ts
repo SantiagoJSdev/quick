@@ -4,6 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  inventoryValuationFunctional,
+  operationalUnitCostFunctional,
+} from '../../common/inventory/operational-unit-cost';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { InventoryAdjustDto } from './dto/inventory-adjust.dto';
 
@@ -300,12 +304,18 @@ export class InventoryService {
       );
     }
 
-    // Conservar último costo medio aunque quantity <= 0 (ventas en negativo).
-    const avg = item.averageUnitCostFunctional;
+    // Costo operativo = catálogo (Product.cost); promedio solo si catálogo = 0.
+    const unitCost = operationalUnitCostFunctional(
+      product.cost,
+      item.averageUnitCostFunctional,
+    );
     const newQty = item.quantity.minus(qtyMag);
-    const newTotal = avg.mul(newQty);
-    const newAvg = avg;
-    const totalCostForMove = avg.mul(qtyMag);
+    const totalCostForMove = unitCost.mul(qtyMag);
+    const valued = inventoryValuationFunctional(
+      newQty,
+      product.cost,
+      item.averageUnitCostFunctional,
+    );
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -314,8 +324,9 @@ export class InventoryService {
         storeId,
         type: 'OUT_SALE',
         quantity: qtyMag,
-        unitCostFunctional: avg,
+        unitCostFunctional: unitCost,
         totalCostFunctional: totalCostForMove,
+        costAtMoment: product.cost.gt(0) ? product.cost : null,
         priceAtMoment: params.priceAtMomentDocument ?? null,
         referenceId: saleId,
         reason: null,
@@ -326,8 +337,8 @@ export class InventoryService {
       where: { id: item.id },
       data: {
         quantity: newQty,
-        totalCostFunctional: newTotal,
-        averageUnitCostFunctional: newAvg,
+        totalCostFunctional: valued.totalCost,
+        averageUnitCostFunctional: valued.unitCost,
         lastAdjustedAt: new Date(),
       },
     });
@@ -635,8 +646,8 @@ export class InventoryService {
   }
 
   /**
-   * Baja por merma (`OUT_LOSS`). Costo = promedio actual. No deja qty por debajo
-   * de reserved (misma regla que OUT_ADJUST).
+   * Baja por merma (`OUT_LOSS`). Costo = `Product.cost` (catálogo); promedio solo
+   * si catálogo = 0. No deja qty por debajo de reserved (misma regla que OUT_ADJUST).
    */
   async applyOutLossTx(
     tx: Prisma.TransactionClient,
@@ -681,7 +692,7 @@ export class InventoryService {
 
     const product = await tx.product.findUnique({
       where: { id: dto.productId },
-      select: { id: true, sku: true, name: true },
+      select: { id: true, sku: true, name: true, cost: true },
     });
     if (!product) {
       throw new NotFoundException('Product not found');
@@ -701,13 +712,17 @@ export class InventoryService {
       );
     }
 
-    const avg = item.quantity.gt(0)
-      ? item.averageUnitCostFunctional
-      : new Prisma.Decimal(0);
-    const lineCost = avg.mul(qtyMag);
+    const unitCost = operationalUnitCostFunctional(
+      product.cost,
+      item.averageUnitCostFunctional,
+    );
+    const lineCost = unitCost.mul(qtyMag);
     const newQty = item.quantity.minus(qtyMag);
-    const newTotal = avg.mul(newQty);
-    const newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
+    const valued = inventoryValuationFunctional(
+      newQty,
+      product.cost,
+      item.averageUnitCostFunctional,
+    );
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -716,8 +731,9 @@ export class InventoryService {
         storeId,
         type: 'OUT_LOSS',
         quantity: qtyMag,
-        unitCostFunctional: avg,
+        unitCostFunctional: unitCost,
         totalCostFunctional: lineCost,
+        costAtMoment: product.cost.gt(0) ? product.cost : null,
         reason: dto.reason.trim().slice(0, 240),
       },
     });
@@ -726,8 +742,8 @@ export class InventoryService {
       where: { id: item.id },
       data: {
         quantity: newQty,
-        totalCostFunctional: newTotal,
-        averageUnitCostFunctional: newAvg,
+        totalCostFunctional: valued.totalCost,
+        averageUnitCostFunctional: valued.unitCost,
         lastAdjustedAt: new Date(),
       },
     });
@@ -739,7 +755,7 @@ export class InventoryService {
       productSku: product.sku,
       productName: product.name,
       quantity: qtyMag.toString(),
-      unitCostFunctional: avg.toString(),
+      unitCostFunctional: unitCost.toString(),
       totalCostFunctional: lineCost.toString(),
       quantityAfter: newQty.toString(),
     };

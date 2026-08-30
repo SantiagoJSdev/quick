@@ -58,7 +58,7 @@ export class InventoryController {
   @Post('losses')
   @ApiBody({ type: RegisterInventoryLossDto })
   @ApiOkResponse({
-    description: 'Merma OUT_LOSS: baja stock a costo promedio (idempotente opId)',
+    description: 'Merma OUT_LOSS: baja stock a Product.cost (catálogo); promedio solo si costo catálogo = 0',
   })
   async registerLoss(
     @Req() req: Request,

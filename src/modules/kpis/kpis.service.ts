@@ -11,6 +11,10 @@ import {
   REPORT_SALE_STATUS,
 } from '../../common/reports/report-amounts';
 import { convertAmountDocumentToFunctional } from '../../common/fx/convert-amount';
+import {
+  inventoryValuationFunctional,
+  operationalUnitCostFunctional,
+} from '../../common/inventory/operational-unit-cost';
 import { resolveReportUtcRange } from '../../common/dates/report-date-presets';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -47,9 +51,7 @@ function lineCost(
   productCost: Prisma.Decimal,
   avgCost: Prisma.Decimal | null | undefined,
 ): Prisma.Decimal {
-  const unit =
-    avgCost != null && avgCost.gt(0) ? avgCost : productCost;
-  return qty.mul(unit);
+  return qty.mul(operationalUnitCostFunctional(productCost, avgCost));
 }
 
 @Injectable()
@@ -903,14 +905,18 @@ export class KpisService {
   }
 
   private async inventoryEquityNow(storeId: string) {
-    const [invAgg, payAgg] = await Promise.all([
-      this.prisma.inventoryItem.aggregate({
+    const [items, payAgg] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
         where: {
           storeId,
           quantity: { gt: 0 },
           product: { active: true },
         },
-        _sum: { totalCostFunctional: true },
+        select: {
+          quantity: true,
+          averageUnitCostFunctional: true,
+          product: { select: { cost: true } },
+        },
       }),
       this.prisma.purchase.aggregate({
         where: {
@@ -923,8 +929,16 @@ export class KpisService {
       }),
     ]);
 
-    const inventoryCapital =
-      invAgg._sum.totalCostFunctional ?? new Prisma.Decimal(0);
+    let inventoryCapital = new Prisma.Decimal(0);
+    for (const row of items) {
+      inventoryCapital = inventoryCapital.plus(
+        inventoryValuationFunctional(
+          row.quantity,
+          row.product.cost,
+          row.averageUnitCostFunctional,
+        ).totalCost,
+      );
+    }
     const payablesDue =
       payAgg._sum.amountDueFunctional ?? new Prisma.Decimal(0);
     return {
