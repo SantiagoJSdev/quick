@@ -6,10 +6,10 @@ import { Prisma } from '@prisma/client';
  * inventario solo se usa si el catálogo está en 0 (producto sin costo cargado).
  */
 export function operationalUnitCostFunctional(
-  catalogCost: Prisma.Decimal,
+  catalogCost: Prisma.Decimal | null | undefined,
   averageUnitCost: Prisma.Decimal | null | undefined,
 ): Prisma.Decimal {
-  if (catalogCost.gt(0)) {
+  if (catalogCost != null && catalogCost.gt(0)) {
     return catalogCost;
   }
   if (averageUnitCost != null && averageUnitCost.gt(0)) {
@@ -21,7 +21,7 @@ export function operationalUnitCostFunctional(
 /** Valor en stock = qty × costo operativo (catálogo primero). */
 export function inventoryValuationFunctional(
   quantity: Prisma.Decimal,
-  catalogCost: Prisma.Decimal,
+  catalogCost: Prisma.Decimal | null | undefined,
   averageUnitCost: Prisma.Decimal | null | undefined,
 ): { unitCost: Prisma.Decimal; totalCost: Prisma.Decimal } {
   const unitCost = operationalUnitCostFunctional(catalogCost, averageUnitCost);
