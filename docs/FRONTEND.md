@@ -12,7 +12,7 @@ Contratos HTTP detallados (sync, compras): carpeta [api/](./api/).
 |------|--------|
 | API | `{API_BASE_URL}/api/v1` |
 | Header | `X-Store-Id: <uuid>` en casi todo |
-| Errores | `{ statusCode, error, message[], requestId }` |
+| Errores | `{ statusCode, error, message[], requestId, code? }` |
 | Montos | `String` decimal en JSON (no `double`) |
 | Offline | Cola local → `POST /sync/push`; catálogo → `GET /sync/pull`; `opId` UUID |
 
@@ -68,7 +68,7 @@ Contratos HTTP detallados (sync, compras): carpeta [api/](./api/).
 
 **Config:** `GET/PATCH /stores/:id/business-settings`, `GET/POST /exchange-rates`  
 **Catálogo:** `GET/POST/PATCH/DELETE /products`, `POST /products-with-stock`  
-**Inventario:** `GET /inventory`, `POST /inventory/adjustments`  
+**Inventario:** `GET /inventory`, `POST /inventory/adjustments`, `POST /inventory/losses` (merma) — [api/INVENTORY.md](./api/INVENTORY.md)  
 **Operaciones:** `POST/GET /sales`, `POST/GET /purchases/:id`, `POST/GET /sale-returns/:id`, CRUD `/suppliers`  
 **Sync:** `POST /sync/push`, `GET /sync/pull`  
 **Fotos:** §8  

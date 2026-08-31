@@ -52,6 +52,26 @@ describe('ApiExceptionFilter', () => {
     );
   });
 
+  it('includes code when present on HttpException body', () => {
+    const { host, json } = mockHost({});
+    filter.catch(
+      new BadRequestException({
+        code: 'UNIT_COST_REQUIRED_FOR_ZERO_STOCK',
+        message: 'Indicá costo unitario al reingresar stock con cantidad 0.',
+      }),
+      host,
+    );
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: HttpStatus.BAD_REQUEST,
+        code: 'UNIT_COST_REQUIRED_FOR_ZERO_STOCK',
+        message: [
+          'Indicá costo unitario al reingresar stock con cantidad 0.',
+        ],
+      }),
+    );
+  });
+
   it('maps unknown errors to 500', () => {
     const { host, json } = mockHost({});
     filter.catch(new Error('boom'), host);

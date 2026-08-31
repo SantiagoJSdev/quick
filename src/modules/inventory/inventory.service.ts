@@ -156,14 +156,13 @@ export class InventoryService {
     let totalCostForMove: Prisma.Decimal;
 
     if (dto.type === 'IN_ADJUST') {
-      const unitIn = dto.unitCostFunctional
-        ? new Prisma.Decimal(dto.unitCostFunctional)
-        : item.quantity.gt(0)
-          ? item.averageUnitCostFunctional
-          : product.cost;
+      const unitIn = this.resolveInAdjustUnitCost(dto, item, product);
 
-      if (!unitIn.isFinite() || unitIn.lt(0)) {
-        throw new BadRequestException('Invalid unit cost for IN adjust');
+      if (!unitIn.isFinite() || unitIn.lte(0)) {
+        throw new BadRequestException({
+          code: 'INVALID_UNIT_COST_FOR_IN_ADJUST',
+          message: 'Costo unitario inválido para IN_ADJUST.',
+        });
       }
 
       const lineTotal = qtyMag.mul(unitIn);
@@ -759,5 +758,35 @@ export class InventoryService {
       totalCostFunctional: lineCost.toString(),
       quantityAfter: newQty.toString(),
     };
+  }
+
+  /**
+   * Costo unitario para IN_ADJUST:
+   * - body explícito → ese valor;
+   * - stock previo > 0 → costo medio actual;
+   * - stock previo ≤ 0 → `Product.cost` si > 0; si no, error claro.
+   */
+  private resolveInAdjustUnitCost(
+    dto: Pick<InventoryAdjustDto, 'unitCostFunctional'>,
+    item: {
+      quantity: Prisma.Decimal;
+      averageUnitCostFunctional: Prisma.Decimal;
+    },
+    product: { cost: Prisma.Decimal },
+  ): Prisma.Decimal {
+    if (dto.unitCostFunctional?.trim()) {
+      return new Prisma.Decimal(dto.unitCostFunctional);
+    }
+    if (item.quantity.gt(0)) {
+      return item.averageUnitCostFunctional;
+    }
+    const catalogCost = product.cost;
+    if (catalogCost != null && catalogCost.gt(0)) {
+      return catalogCost;
+    }
+    throw new BadRequestException({
+      code: 'UNIT_COST_REQUIRED_FOR_ZERO_STOCK',
+      message: 'Indicá costo unitario al reingresar stock con cantidad 0.',
+    });
   }
 }

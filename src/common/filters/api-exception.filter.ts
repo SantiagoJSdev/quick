@@ -50,12 +50,20 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
       const normalized = Array.isArray(message) ? message : [String(message)];
 
-      res.status(status).json({
+      const json: Record<string, unknown> = {
         statusCode: status,
         error: errorName,
         message: normalized,
         requestId,
-      });
+      };
+      if (typeof body === 'object' && body !== null) {
+        const code = (body as Record<string, unknown>).code;
+        if (typeof code === 'string') {
+          json.code = code;
+        }
+      }
+
+      res.status(status).json(json);
       return;
     }
 
