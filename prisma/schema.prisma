@@ -698,6 +698,9 @@ model StoreCapitalSnapshot {
   cashBalanceEst   Decimal? @db.Decimal(65, 30)
   cashAvailableEst Decimal? @db.Decimal(65, 30)
 
+  /// Costos por SKU al capturar (qty + unitCostFunctional; COGS histórico sin SaleLine.unitCostFunctional).
+  inventorySkuCosts Json?
+
   capturedAt DateTime @default(now())
   /// CASH_CLOSE | LAZY | MANUAL
   source     String   @default("MANUAL")
