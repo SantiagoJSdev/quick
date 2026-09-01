@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { convertAmountDocumentToFunctional } from '../../common/fx/convert-amount';
+import {
+  applyCatalogFromPurchaseLine,
+  revertCatalogFromPurchaseLine,
+} from '../../common/products/sync-catalog-from-purchase';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
@@ -17,6 +21,7 @@ import type {
 } from './dto/create-purchase.dto';
 import type { PurchasesListQueryDto } from './dto/purchases-list-query.dto';
 import type { VoidPurchaseDto } from './dto/void-purchase.dto';
+import { assertUniquePurchaseLineProducts } from './purchase-line-validation';
 
 function parseDueDate(raw?: string): Date | null {
   if (!raw || !raw.trim()) return null;
@@ -179,6 +184,8 @@ export class PurchasesService {
       throw new BadRequestException('Supplier is inactive');
     }
 
+    assertUniquePurchaseLineProducts(dto.lines);
+
     const supplierInvoiceReference =
       dto.supplierInvoiceReference != null &&
       dto.supplierInvoiceReference.trim().length > 0
@@ -237,6 +244,12 @@ export class PurchasesService {
         lineTotalDocument,
       });
 
+      const catalogSnap = await applyCatalogFromPurchaseLine(tx, {
+        productId: line.productId,
+        unitCostFunctional,
+        defaultMarginPercent: settings.defaultMarginPercent,
+      });
+
       lineCreates.push({
         product: { connect: { id: line.productId } },
         quantity: qty,
@@ -246,6 +259,12 @@ export class PurchasesService {
         unitCostFunctional,
         lineTotalDocument,
         lineTotalFunctional,
+        catalogCostBeforeFunctional: catalogSnap.costUpdated
+          ? catalogSnap.catalogCostBeforeFunctional
+          : null,
+        catalogPriceBefore: catalogSnap.priceUpdated
+          ? catalogSnap.catalogPriceBefore
+          : null,
       });
 
       totalDoc = totalDoc.plus(lineTotalDocument);
@@ -759,6 +778,10 @@ export class PurchasesService {
           voidMode,
         },
       });
+
+      for (const line of purchase.lines) {
+        await revertCatalogFromPurchaseLine(tx, line);
+      }
 
       const updated = await tx.purchase.findUniqueOrThrow({
         where: { id: purchaseId },

@@ -336,6 +336,10 @@ model PurchaseLine {
   unitCostFunctional   Decimal? @db.Decimal(65, 30)
   lineTotalDocument    Decimal? @db.Decimal(65, 30)
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+  /// `Product.cost` funcional antes de esta recepción (revertir en VOID).
+  catalogCostBeforeFunctional Decimal? @db.Decimal(65, 30)
+  /// `Product.price` antes de recalcular lista por margen (revertir en VOID).
+  catalogPriceBefore          Decimal? @db.Decimal(65, 30)
 }
 
 /// Abono a una factura de compra (cuenta por pagar).

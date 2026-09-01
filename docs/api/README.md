@@ -6,6 +6,7 @@
 |-----------|-----------|
 | [OPS_METRICS.md](./OPS_METRICS.md) | `GET /ops/metrics` |
 | [PURCHASES.md](./PURCHASES.md) | Compras REST + sync `PURCHASE_RECEIVE` |
+| [INVENTORY.md](./INVENTORY.md) | Ajustes `IN_ADJUST` / `OUT_ADJUST`, costo con stock 0 |
 | [KPIS.md](./KPIS.md) | Snapshot: ganancia/margen, deuda por días, stock bajo/negativo |
 | [../KPI_FRONTEND.md](../KPI_FRONTEND.md) | Front: tablero KPIs, capital, merma, POS, cierre de caja |
 | [../KPI_IMPLEMENTACION_BACK.md](../KPI_IMPLEMENTACION_BACK.md) | Pasos backend pendientes |
