@@ -33,7 +33,7 @@ export class InventoryAdjustDto {
   @ApiPropertyOptional({
     example: '2.50',
     description:
-      'Obligatorio en IN_ADJUST cuando stock previo ≤ 0 y Product.cost = 0. Si falta y hay stock > 0, se usa costo medio; con stock 0 se usa Product.cost si > 0.',
+      'Si se envía (> 0): actualiza Product.cost y se usa en el movimiento. Si falta: usa Product.cost del catálogo.',
   })
   @IsOptional()
   @IsNumberString()

@@ -935,7 +935,7 @@ export class KpisService {
         inventoryValuationFunctional(
           row.quantity,
           row.product.cost,
-          row.averageUnitCostFunctional,
+          null,
         ).totalCost,
       );
     }

@@ -68,7 +68,7 @@ describe('InventoryService.applyAdjustTx IN_ADJUST', () => {
     );
   });
 
-  it('uses average cost when stock > 0 and unitCostFunctional is omitted', async () => {
+  it('uses Product.cost when stock > 0 and unitCostFunctional is omitted', async () => {
     const { tx } = makeTx({
       quantity: '10',
       averageUnitCost: '3',
@@ -84,7 +84,7 @@ describe('InventoryService.applyAdjustTx IN_ADJUST', () => {
     expect(tx.stockMovement.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          unitCostFunctional: new Prisma.Decimal('3'),
+          unitCostFunctional: new Prisma.Decimal('99'),
         }),
       }),
     );

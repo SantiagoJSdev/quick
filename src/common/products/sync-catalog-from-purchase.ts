@@ -90,6 +90,38 @@ export async function applyCatalogFromPurchaseLine(
   };
 }
 
+/** IN_ADJUST / stock inicial: solo actualiza `Product.cost` (sin recalcular precio). */
+export async function applyCatalogCostFromAdjust(
+  tx: Prisma.TransactionClient,
+  params: {
+    productId: string;
+    unitCostFunctional: Prisma.Decimal;
+  },
+): Promise<boolean> {
+  if (
+    !params.unitCostFunctional.isFinite() ||
+    params.unitCostFunctional.lte(0)
+  ) {
+    return false;
+  }
+
+  const updated = await tx.product.update({
+    where: { id: params.productId },
+    data: { cost: params.unitCostFunctional },
+    include: productRelationInclude,
+  });
+
+  await tx.serverChangeLog.create({
+    data: {
+      opType: 'PRODUCT_UPDATED',
+      payload: productSyncPullPayload(updated) as Prisma.InputJsonValue,
+      storeScopeId: updated.catalogStoreId,
+    },
+  });
+
+  return true;
+}
+
 /** Revierte catálogo al snapshot guardado en la línea de compra (VOID). */
 export async function revertCatalogFromPurchaseLine(
   tx: Prisma.TransactionClient,
