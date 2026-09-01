@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { convertAmountDocumentToFunctional } from '../../common/fx/convert-amount';
+import { resolveSaleLineUnitCostFunctional } from '../../common/sales/sale-line-cogs';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
 import { StoreFxSnapshotService } from '../exchange-rates/store-fx-snapshot.service';
@@ -192,6 +193,11 @@ export class SalesService {
           ? `${dto.opId}:${line.productId}`
           : null;
 
+      const unitCostAtSale = resolveSaleLineUnitCostFunctional(
+        product.cost,
+        line.unitCostFunctional,
+      );
+
       const out = await this.inventory.applyOutSaleLineTx(tx, {
         storeId,
         productId: line.productId,
@@ -199,6 +205,7 @@ export class SalesService {
         saleId,
         opId: movementOpId,
         priceAtMomentDocument: price,
+        unitCostFunctional: unitCostAtSale,
       });
 
       if (out.stockConflict) {
@@ -224,6 +231,7 @@ export class SalesService {
         unitPriceFunctional,
         lineTotalDocument,
         lineTotalFunctional,
+        unitCostFunctional: unitCostAtSale,
         discountDocument: disc.gt(0) ? disc : null,
         discountFunctional: disc.gt(0) ? discountFunctional : null,
       });

@@ -585,6 +585,8 @@ model SaleLine {
   unitPriceFunctional  Decimal? @db.Decimal(65, 30)
   lineTotalDocument    Decimal? @db.Decimal(65, 30)
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+  /// COGS unitario en moneda funcional al momento del cobro (foto; no recalcular con catálogo vivo).
+  unitCostFunctional   Decimal? @db.Decimal(65, 30)
   discountDocument     Decimal? @db.Decimal(65, 30)
   discountFunctional   Decimal? @db.Decimal(65, 30)
 

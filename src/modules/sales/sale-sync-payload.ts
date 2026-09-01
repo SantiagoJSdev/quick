@@ -80,6 +80,10 @@ export function parseSalePayload(
       quantity: L.quantity,
       price: L.price,
       discount: typeof L.discount === 'string' ? L.discount : undefined,
+      unitCostFunctional:
+        typeof L.unitCostFunctional === 'string'
+          ? L.unitCostFunctional
+          : undefined,
     });
   }
 

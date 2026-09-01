@@ -15,6 +15,7 @@ import {
   inventoryValuationFunctional,
   operationalUnitCostFunctional,
 } from '../../common/inventory/operational-unit-cost';
+import { saleLineCogsFunctional } from '../../common/sales/sale-line-cogs';
 import { resolveReportUtcRange } from '../../common/dates/report-date-presets';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -52,6 +53,23 @@ function lineCost(
   avgCost: Prisma.Decimal | null | undefined,
 ): Prisma.Decimal {
   return qty.mul(operationalUnitCostFunctional(productCost, avgCost));
+}
+
+function returnLineCogs(
+  rl: {
+    quantity: Prisma.Decimal;
+    saleLine: { unitCostFunctional: Prisma.Decimal | null } | null;
+  },
+  fallbackCatalogCost: Prisma.Decimal,
+): Prisma.Decimal {
+  if (rl.saleLine?.unitCostFunctional != null) {
+    return saleLineCogsFunctional(
+      rl.quantity,
+      rl.saleLine.unitCostFunctional,
+      fallbackCatalogCost,
+    );
+  }
+  return lineCost(rl.quantity, fallbackCatalogCost, null);
 }
 
 @Injectable()
@@ -1146,15 +1164,11 @@ export class KpisService {
         quantity: true,
         total: true,
         lineTotalFunctional: true,
+        unitCostFunctional: true,
         sale: { select: { createdAt: true } },
         product: {
           select: {
             cost: true,
-            inventoryItems: {
-              where: { storeId },
-              select: { averageUnitCostFunctional: true },
-              take: 1,
-            },
           },
         },
       },
@@ -1173,15 +1187,11 @@ export class KpisService {
         lineTotalFunctional: true,
         unitPriceFunctional: true,
         saleReturn: { select: { createdAt: true } },
+        saleLine: { select: { unitCostFunctional: true } },
         product: {
           select: {
             cost: true,
             price: true,
-            inventoryItems: {
-              where: { storeId },
-              select: { averageUnitCostFunctional: true },
-              take: 1,
-            },
           },
         },
       },
@@ -1211,8 +1221,11 @@ export class KpisService {
         sl.lineTotalFunctional ??
         sl.total ??
         sl.quantity.mul(0);
-      const avg = sl.product.inventoryItems[0]?.averageUnitCostFunctional;
-      const cost = lineCost(sl.quantity, sl.product.cost, avg);
+      const cost = saleLineCogsFunctional(
+        sl.quantity,
+        sl.unitCostFunctional,
+        sl.product.cost,
+      );
       netSales = netSales.plus(revenue);
       cogs = cogs.plus(cost);
       const day = DateTime.fromJSDate(sl.sale.createdAt, { zone: 'utc' })
@@ -1227,8 +1240,7 @@ export class KpisService {
         rl.quantity.mul(
           rl.unitPriceFunctional ?? rl.product.price,
         );
-      const avg = rl.product.inventoryItems[0]?.averageUnitCostFunctional;
-      const cost = lineCost(rl.quantity, rl.product.cost, avg);
+      const cost = returnLineCogs(rl, rl.product.cost);
       netSales = netSales.minus(revenue);
       cogs = cogs.minus(cost);
       const day = DateTime.fromJSDate(rl.saleReturn.createdAt, { zone: 'utc' })

@@ -235,6 +235,8 @@ export class InventoryService {
       saleId: string;
       opId?: string | null;
       priceAtMomentDocument?: Prisma.Decimal | null;
+      /** COGS unitario congelado (offline / foto al cobro). Si se omite, usa `Product.cost`. */
+      unitCostFunctional?: Prisma.Decimal | null;
       /** Override: si false, siempre strict. Si omitido, lee BusinessSettings + Product. */
       allowNegativeStock?: boolean;
     },
@@ -316,7 +318,12 @@ export class InventoryService {
       );
     }
 
-    const unitCost = operationalUnitCostFunctional(product.cost, null);
+    const unitCost =
+      params.unitCostFunctional != null &&
+      params.unitCostFunctional.isFinite() &&
+      params.unitCostFunctional.gt(0)
+        ? params.unitCostFunctional
+        : operationalUnitCostFunctional(product.cost, null);
     const newQty = item.quantity.minus(qtyMag);
     const totalCostForMove = unitCost.mul(qtyMag);
     const valued = inventoryItemTotalsFromCatalog(newQty, product.cost);
@@ -330,7 +337,7 @@ export class InventoryService {
         quantity: qtyMag,
         unitCostFunctional: unitCost,
         totalCostFunctional: totalCostForMove,
-        costAtMoment: product.cost.gt(0) ? product.cost : null,
+        costAtMoment: unitCost.gt(0) ? unitCost : null,
         priceAtMoment: params.priceAtMomentDocument ?? null,
         referenceId: saleId,
         reason: null,
