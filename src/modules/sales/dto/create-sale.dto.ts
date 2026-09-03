@@ -34,6 +34,15 @@ export class CreateSaleLineDto {
   @IsOptional()
   @IsNumberString()
   discount?: string;
+
+  @ApiPropertyOptional({
+    example: '1.25',
+    description:
+      'COGS unitario en moneda funcional al cobro. Obligatorio en sync offline; si se omite online, usa Product.cost del servidor.',
+  })
+  @IsOptional()
+  @IsNumberString()
+  unitCostFunctional?: string;
 }
 
 export class SalePaymentInputDto {

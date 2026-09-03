@@ -27,14 +27,26 @@ export class SaleReturnsService {
   ) {}
 
   /**
-   * COGS reingresado: promedio ponderado de `OUT_SALE` de esa venta y producto.
+   * COGS reingresado: `SaleLine.unitCostFunctional` de la venta original, o
+   * promedio de `OUT_SALE` si la línea es histórica sin foto.
    */
   private async resolveRestockCostFunctional(
     tx: Prisma.TransactionClient,
     originalSaleId: string,
     productId: string,
     returnQty: Prisma.Decimal,
+    saleLine?: { unitCostFunctional?: Prisma.Decimal | null },
   ): Promise<{ unitCogs: Prisma.Decimal; lineTotalCogs: Prisma.Decimal }> {
+    if (
+      saleLine?.unitCostFunctional != null &&
+      saleLine.unitCostFunctional.gt(0)
+    ) {
+      return {
+        unitCogs: saleLine.unitCostFunctional,
+        lineTotalCogs: saleLine.unitCostFunctional.mul(returnQty),
+      };
+    }
+
     const moves = await tx.stockMovement.findMany({
       where: {
         referenceId: originalSaleId,
@@ -213,6 +225,7 @@ export class SaleReturnsService {
         original.id,
         sl.productId,
         retQty,
+        sl,
       );
 
       const movementOpId =

@@ -15,6 +15,13 @@ import {
   inventoryValuationFunctional,
   operationalUnitCostFunctional,
 } from '../../common/inventory/operational-unit-cost';
+import {
+  frozenCostMapFromSnapshot,
+  frozenSkuCostsPayload,
+  frozenUnitCostForProduct,
+  type FrozenSkuCostLine,
+} from '../../common/kpis/frozen-catalog-costs';
+import { saleLineCogsFunctional } from '../../common/sales/sale-line-cogs';
 import { resolveReportUtcRange } from '../../common/dates/report-date-presets';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -52,6 +59,23 @@ function lineCost(
   avgCost: Prisma.Decimal | null | undefined,
 ): Prisma.Decimal {
   return qty.mul(operationalUnitCostFunctional(productCost, avgCost));
+}
+
+function returnLineCogs(
+  rl: {
+    quantity: Prisma.Decimal;
+    saleLine: { unitCostFunctional: Prisma.Decimal | null } | null;
+  },
+  fallbackCatalogCost: Prisma.Decimal,
+): Prisma.Decimal {
+  if (rl.saleLine?.unitCostFunctional != null) {
+    return saleLineCogsFunctional(
+      rl.quantity,
+      rl.saleLine.unitCostFunctional,
+      fallbackCatalogCost,
+    );
+  }
+  return lineCost(rl.quantity, fallbackCatalogCost, null);
 }
 
 @Injectable()
@@ -102,8 +126,19 @@ export class KpisService {
         ? store.timezone.trim()
         : 'UTC';
 
+    const frozenCostsByDay = await this.loadFrozenCostMapsForDays(
+      storeId,
+      listInclusiveYmd(range.meta.dateFrom, range.meta.dateTo),
+    );
+
     const [grossProfit, payables, stockAlerts, capital] = await Promise.all([
-      this.grossProfitForRange(storeId, range.startUtc, range.endUtc, zone),
+      this.grossProfitForRange(
+        storeId,
+        range.startUtc,
+        range.endUtc,
+        zone,
+        frozenCostsByDay,
+      ),
       this.payablesByDay(storeId, zone),
       this.stockAlerts(storeId),
       this.capitalLive(storeId, zone),
@@ -702,6 +737,7 @@ export class KpisService {
         bounds.startUtc,
         bounds.endUtc,
         zone,
+        await this.loadFrozenCostMapsForDays(storeId, [todayYmd]),
       );
       const real = await this.realProfitForRange(
         storeId,
@@ -904,20 +940,48 @@ export class KpisService {
     );
   }
 
+  private async inventoryEquityLines(storeId: string): Promise<{
+    inventoryCapital: Prisma.Decimal;
+    skuLines: FrozenSkuCostLine[];
+  }> {
+    const items = await this.prisma.inventoryItem.findMany({
+      where: {
+        storeId,
+        quantity: { gt: 0 },
+        product: { active: true },
+      },
+      select: {
+        quantity: true,
+        product: {
+          select: { id: true, sku: true, name: true, cost: true },
+        },
+      },
+    });
+
+    let inventoryCapital = new Prisma.Decimal(0);
+    const skuLines: FrozenSkuCostLine[] = [];
+    for (const row of items) {
+      const valued = inventoryValuationFunctional(
+        row.quantity,
+        row.product.cost,
+        null,
+      );
+      inventoryCapital = inventoryCapital.plus(valued.totalCost);
+      skuLines.push({
+        productId: row.product.id,
+        sku: row.product.sku,
+        name: row.product.name,
+        quantity: decimalToReportString(row.quantity),
+        unitCostFunctional: decimalToReportString(valued.unitCost),
+        totalCostFunctional: decimalToReportString(valued.totalCost),
+      });
+    }
+    return { inventoryCapital, skuLines };
+  }
+
   private async inventoryEquityNow(storeId: string) {
-    const [items, payAgg] = await Promise.all([
-      this.prisma.inventoryItem.findMany({
-        where: {
-          storeId,
-          quantity: { gt: 0 },
-          product: { active: true },
-        },
-        select: {
-          quantity: true,
-          averageUnitCostFunctional: true,
-          product: { select: { cost: true } },
-        },
-      }),
+    const [inv, payAgg] = await Promise.all([
+      this.inventoryEquityLines(storeId),
       this.prisma.purchase.aggregate({
         where: {
           storeId,
@@ -929,23 +993,39 @@ export class KpisService {
       }),
     ]);
 
-    let inventoryCapital = new Prisma.Decimal(0);
-    for (const row of items) {
-      inventoryCapital = inventoryCapital.plus(
-        inventoryValuationFunctional(
-          row.quantity,
-          row.product.cost,
-          row.averageUnitCostFunctional,
-        ).totalCost,
-      );
-    }
     const payablesDue =
       payAgg._sum.amountDueFunctional ?? new Prisma.Decimal(0);
     return {
-      inventoryCapital,
+      inventoryCapital: inv.inventoryCapital,
+      skuLines: inv.skuLines,
       payablesDue,
-      netInventoryEquity: inventoryCapital.minus(payablesDue),
+      netInventoryEquity: inv.inventoryCapital.minus(payablesDue),
     };
+  }
+
+  private async loadFrozenCostMapsForDays(
+    storeId: string,
+    days: string[],
+  ): Promise<Map<string, Map<string, Prisma.Decimal>>> {
+    const unique = [...new Set(days.filter((d) => d.trim() !== ''))];
+    if (unique.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.storeCapitalSnapshot.findMany({
+      where: {
+        storeId,
+        date: { in: unique.map((d) => calendarDateUtcMidnight(d)) },
+      },
+      select: { date: true, inventorySkuCosts: true },
+    });
+    const result = new Map<string, Map<string, Prisma.Decimal>>();
+    for (const row of rows) {
+      result.set(
+        ymdFromPrismaDate(row.date),
+        frozenCostMapFromSnapshot(row.inventorySkuCosts),
+      );
+    }
+    return result;
   }
 
   private async computeCapitalPhoto(
@@ -971,6 +1051,7 @@ export class KpisService {
         bounds.startUtc,
         bounds.endUtc,
         zone,
+        await this.loadFrozenCostMapsForDays(storeId, [dateYmd]),
       ),
       this.prisma.purchase.findMany({
         where: {
@@ -1031,6 +1112,9 @@ export class KpisService {
       inventoryCapital: equity.inventoryCapital,
       payablesDue: equity.payablesDue,
       netInventoryEquity: equity.netInventoryEquity,
+      inventorySkuCosts: frozenSkuCostsPayload(
+        equity.skuLines,
+      ) as unknown as Prisma.InputJsonValue,
       netSales: new Prisma.Decimal(gross.netSales),
       cogs: new Prisma.Decimal(gross.cogs),
       grossProfit: new Prisma.Decimal(gross.grossProfit),
@@ -1053,11 +1137,13 @@ export class KpisService {
     cfg: RealProfitConfig,
   ) {
     const bounds = resolveSaleListUtcRange(zone, dateYmd, dateYmd);
+    const frozen = await this.loadFrozenCostMapsForDays(storeId, [dateYmd]);
     const gross = await this.grossProfitForRange(
       storeId,
       bounds.startUtc,
       bounds.endUtc,
       zone,
+      frozen,
     );
     const real = await this.realProfitForRange(
       storeId,
@@ -1133,6 +1219,7 @@ export class KpisService {
     startUtc: Date,
     endUtc: Date,
     zone: string,
+    frozenCostsByDay: Map<string, Map<string, Prisma.Decimal>> = new Map(),
   ) {
     const saleLines = await this.prisma.saleLine.findMany({
       where: {
@@ -1146,15 +1233,12 @@ export class KpisService {
         quantity: true,
         total: true,
         lineTotalFunctional: true,
+        unitCostFunctional: true,
         sale: { select: { createdAt: true } },
         product: {
           select: {
+            id: true,
             cost: true,
-            inventoryItems: {
-              where: { storeId },
-              select: { averageUnitCostFunctional: true },
-              take: 1,
-            },
           },
         },
       },
@@ -1173,15 +1257,12 @@ export class KpisService {
         lineTotalFunctional: true,
         unitPriceFunctional: true,
         saleReturn: { select: { createdAt: true } },
+        saleLine: { select: { unitCostFunctional: true } },
         product: {
           select: {
+            id: true,
             cost: true,
             price: true,
-            inventoryItems: {
-              where: { storeId },
-              select: { averageUnitCostFunctional: true },
-              take: 1,
-            },
           },
         },
       },
@@ -1211,13 +1292,21 @@ export class KpisService {
         sl.lineTotalFunctional ??
         sl.total ??
         sl.quantity.mul(0);
-      const avg = sl.product.inventoryItems[0]?.averageUnitCostFunctional;
-      const cost = lineCost(sl.quantity, sl.product.cost, avg);
-      netSales = netSales.plus(revenue);
-      cogs = cogs.plus(cost);
       const day = DateTime.fromJSDate(sl.sale.createdAt, { zone: 'utc' })
         .setZone(zone)
         .toISODate()!;
+      const catalogFallback = frozenUnitCostForProduct(
+        frozenCostsByDay.get(day),
+        sl.product.id,
+        sl.product.cost,
+      );
+      const cost = saleLineCogsFunctional(
+        sl.quantity,
+        sl.unitCostFunctional,
+        catalogFallback,
+      );
+      netSales = netSales.plus(revenue);
+      cogs = cogs.plus(cost);
       bump(day, revenue, cost);
     }
 
@@ -1227,13 +1316,17 @@ export class KpisService {
         rl.quantity.mul(
           rl.unitPriceFunctional ?? rl.product.price,
         );
-      const avg = rl.product.inventoryItems[0]?.averageUnitCostFunctional;
-      const cost = lineCost(rl.quantity, rl.product.cost, avg);
-      netSales = netSales.minus(revenue);
-      cogs = cogs.minus(cost);
       const day = DateTime.fromJSDate(rl.saleReturn.createdAt, { zone: 'utc' })
         .setZone(zone)
         .toISODate()!;
+      const catalogFallback = frozenUnitCostForProduct(
+        frozenCostsByDay.get(day),
+        rl.product.id,
+        rl.product.cost,
+      );
+      const cost = returnLineCogs(rl, catalogFallback);
+      netSales = netSales.minus(revenue);
+      cogs = cogs.minus(cost);
       bump(day, revenue.neg(), cost.neg());
     }
 

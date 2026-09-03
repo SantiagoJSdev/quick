@@ -336,6 +336,10 @@ model PurchaseLine {
   unitCostFunctional   Decimal? @db.Decimal(65, 30)
   lineTotalDocument    Decimal? @db.Decimal(65, 30)
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+  /// `Product.cost` funcional antes de esta recepción (revertir en VOID).
+  catalogCostBeforeFunctional Decimal? @db.Decimal(65, 30)
+  /// `Product.price` antes de recalcular lista por margen (revertir en VOID).
+  catalogPriceBefore          Decimal? @db.Decimal(65, 30)
 }
 
 /// Abono a una factura de compra (cuenta por pagar).
@@ -581,6 +585,8 @@ model SaleLine {
   unitPriceFunctional  Decimal? @db.Decimal(65, 30)
   lineTotalDocument    Decimal? @db.Decimal(65, 30)
   lineTotalFunctional  Decimal? @db.Decimal(65, 30)
+  /// COGS unitario en moneda funcional al momento del cobro (foto; no recalcular con catálogo vivo).
+  unitCostFunctional   Decimal? @db.Decimal(65, 30)
   discountDocument     Decimal? @db.Decimal(65, 30)
   discountFunctional   Decimal? @db.Decimal(65, 30)
 
@@ -691,6 +697,9 @@ model StoreCapitalSnapshot {
   /// Paso 4 — estimado de caja / disponible para sacar.
   cashBalanceEst   Decimal? @db.Decimal(65, 30)
   cashAvailableEst Decimal? @db.Decimal(65, 30)
+
+  /// Costos por SKU al capturar (qty + unitCostFunctional; COGS histórico sin SaleLine.unitCostFunctional).
+  inventorySkuCosts Json?
 
   capturedAt DateTime @default(now())
   /// CASH_CLOSE | LAZY | MANUAL

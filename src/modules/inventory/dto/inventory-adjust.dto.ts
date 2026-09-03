@@ -29,8 +29,12 @@ export class InventoryAdjustDto {
   @MaxLength(500)
   reason?: string;
 
-  /** Costo unitario en moneda funcional (entrada); si falta en IN, se usa costo medio actual o `Product.cost`. */
-  @ApiPropertyOptional({ example: '2.50' })
+  /** Costo unitario en moneda funcional (entrada). Ver reglas en docs/api/INVENTORY.md. */
+  @ApiPropertyOptional({
+    example: '2.50',
+    description:
+      'Si se envía (> 0): actualiza Product.cost y se usa en el movimiento. Si falta: usa Product.cost del catálogo.',
+  })
   @IsOptional()
   @IsNumberString()
   unitCostFunctional?: string;

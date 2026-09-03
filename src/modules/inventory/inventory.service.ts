@@ -5,9 +5,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
-  inventoryValuationFunctional,
   operationalUnitCostFunctional,
 } from '../../common/inventory/operational-unit-cost';
+import { inventoryItemTotalsFromCatalog } from '../../common/inventory/inventory-item-totals';
+import { applyCatalogCostFromAdjust } from '../../common/products/sync-catalog-from-purchase';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { InventoryAdjustDto } from './dto/inventory-adjust.dto';
 
@@ -122,6 +123,21 @@ export class InventoryService {
       throw new NotFoundException('Product not found');
     }
 
+    let catalogProduct = product;
+
+    if (dto.type === 'IN_ADJUST' && dto.unitCostFunctional?.trim()) {
+      const explicit = new Prisma.Decimal(dto.unitCostFunctional);
+      if (explicit.isFinite() && explicit.gt(0)) {
+        await applyCatalogCostFromAdjust(tx, {
+          productId: dto.productId,
+          unitCostFunctional: explicit,
+        });
+        catalogProduct = await tx.product.findUniqueOrThrow({
+          where: { id: dto.productId },
+        });
+      }
+    }
+
     let item = await tx.inventoryItem.findUnique({
       where: { productId_storeId: { productId: dto.productId, storeId } },
     });
@@ -150,38 +166,30 @@ export class InventoryService {
     }
 
     let newQty: Prisma.Decimal;
-    let newTotal: Prisma.Decimal;
-    let newAvg: Prisma.Decimal;
     let unitCostForMove: Prisma.Decimal;
     let totalCostForMove: Prisma.Decimal;
 
     if (dto.type === 'IN_ADJUST') {
-      const unitIn = dto.unitCostFunctional
-        ? new Prisma.Decimal(dto.unitCostFunctional)
-        : item.quantity.gt(0)
-          ? item.averageUnitCostFunctional
-          : product.cost;
+      const unitIn = this.resolveInAdjustUnitCost(dto, item, catalogProduct);
 
-      if (!unitIn.isFinite() || unitIn.lt(0)) {
-        throw new BadRequestException('Invalid unit cost for IN adjust');
+      if (!unitIn.isFinite() || unitIn.lte(0)) {
+        throw new BadRequestException({
+          code: 'INVALID_UNIT_COST_FOR_IN_ADJUST',
+          message: 'Costo unitario inválido para IN_ADJUST.',
+        });
       }
 
-      const lineTotal = qtyMag.mul(unitIn);
       newQty = item.quantity.plus(qtyMag);
-      newTotal = item.totalCostFunctional.plus(lineTotal);
-      newAvg = newQty.gt(0) ? newTotal.div(newQty) : new Prisma.Decimal(0);
       unitCostForMove = unitIn;
-      totalCostForMove = lineTotal;
+      totalCostForMove = qtyMag.mul(unitIn);
     } else {
-      const avg = item.quantity.gt(0)
-        ? item.averageUnitCostFunctional
-        : new Prisma.Decimal(0);
+      const unitCost = operationalUnitCostFunctional(catalogProduct.cost, null);
       newQty = item.quantity.minus(qtyMag);
-      newTotal = avg.mul(newQty);
-      newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
-      unitCostForMove = avg;
-      totalCostForMove = avg.mul(qtyMag);
+      unitCostForMove = unitCost;
+      totalCostForMove = unitCost.mul(qtyMag);
     }
+
+    const valued = inventoryItemTotalsFromCatalog(newQty, catalogProduct.cost);
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -192,6 +200,10 @@ export class InventoryService {
         quantity: qtyMag,
         unitCostFunctional: unitCostForMove,
         totalCostFunctional: totalCostForMove,
+        costAtMoment:
+          dto.type === 'IN_ADJUST' && catalogProduct.cost.gt(0)
+            ? catalogProduct.cost
+            : null,
         reason: dto.reason ?? null,
       },
     });
@@ -200,8 +212,8 @@ export class InventoryService {
       where: { id: item.id },
       data: {
         quantity: newQty,
-        totalCostFunctional: newTotal,
-        averageUnitCostFunctional: newAvg,
+        totalCostFunctional: valued.totalCost,
+        averageUnitCostFunctional: valued.unitCost,
         lastAdjustedAt: new Date(),
       },
     });
@@ -210,7 +222,7 @@ export class InventoryService {
   }
 
   /**
-   * Salida por venta (`OUT_SALE`). Costo al costo medio funcional actual; no repricing.
+   * Salida por venta (`OUT_SALE`). Costo = `Product.cost` (catálogo).
    * `opId` opcional (p. ej. `${syncOpId}:${productId}`) para idempotencia.
    * Si la política de tienda lo permite, el stock puede quedar negativo.
    */
@@ -223,6 +235,8 @@ export class InventoryService {
       saleId: string;
       opId?: string | null;
       priceAtMomentDocument?: Prisma.Decimal | null;
+      /** COGS unitario congelado (offline / foto al cobro). Si se omite, usa `Product.cost`. */
+      unitCostFunctional?: Prisma.Decimal | null;
       /** Override: si false, siempre strict. Si omitido, lee BusinessSettings + Product. */
       allowNegativeStock?: boolean;
     },
@@ -304,18 +318,15 @@ export class InventoryService {
       );
     }
 
-    // Costo operativo = catálogo (Product.cost); promedio solo si catálogo = 0.
-    const unitCost = operationalUnitCostFunctional(
-      product.cost,
-      item.averageUnitCostFunctional,
-    );
+    const unitCost =
+      params.unitCostFunctional != null &&
+      params.unitCostFunctional.isFinite() &&
+      params.unitCostFunctional.gt(0)
+        ? params.unitCostFunctional
+        : operationalUnitCostFunctional(product.cost, null);
     const newQty = item.quantity.minus(qtyMag);
     const totalCostForMove = unitCost.mul(qtyMag);
-    const valued = inventoryValuationFunctional(
-      newQty,
-      product.cost,
-      item.averageUnitCostFunctional,
-    );
+    const valued = inventoryItemTotalsFromCatalog(newQty, product.cost);
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -326,7 +337,7 @@ export class InventoryService {
         quantity: qtyMag,
         unitCostFunctional: unitCost,
         totalCostFunctional: totalCostForMove,
-        costAtMoment: product.cost.gt(0) ? product.cost : null,
+        costAtMoment: unitCost.gt(0) ? unitCost : null,
         priceAtMoment: params.priceAtMomentDocument ?? null,
         referenceId: saleId,
         reason: null,
@@ -352,8 +363,7 @@ export class InventoryService {
   }
 
   /**
-   * Entrada por compra recibida (`IN_PURCHASE`). Actualiza costo medio funcional como `IN_ADJUST`.
-   * `unitCostFunctional` = costo unitario ya convertido a moneda funcional.
+   * Entrada por compra recibida (`IN_PURCHASE`). Catálogo se actualiza en PurchasesService.
    */
   async applyInPurchaseLineTx(
     tx: Prisma.TransactionClient,
@@ -399,6 +409,11 @@ export class InventoryService {
     }
 
     // Producto ya validado por el caller (purchase create); FK protege el create.
+    const product = await tx.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
     let item = await tx.inventoryItem.findUnique({
       where: { productId_storeId: { productId, storeId } },
     });
@@ -418,8 +433,7 @@ export class InventoryService {
     }
 
     const newQty = item.quantity.plus(qtyMag);
-    const newTotal = item.totalCostFunctional.plus(lineTotalFunctional);
-    const newAvg = newQty.gt(0) ? newTotal.div(newQty) : new Prisma.Decimal(0);
+    const valued = inventoryItemTotalsFromCatalog(newQty, product.cost);
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -440,8 +454,8 @@ export class InventoryService {
       where: { id: item.id },
       data: {
         quantity: newQty,
-        totalCostFunctional: newTotal,
-        averageUnitCostFunctional: newAvg,
+        totalCostFunctional: valued.totalCost,
+        averageUnitCostFunctional: valued.unitCost,
         lastAdjustedAt: new Date(),
       },
     });
@@ -450,8 +464,8 @@ export class InventoryService {
   }
 
   /**
-   * Entrada por devolución de venta (`IN_RETURN`). Misma lógica de costo medio que compra;
-   * `lineTotalFunctional` debe ser el **COGS** reingresado (no el importe comercial).
+   * Entrada por devolución de venta (`IN_RETURN`). Movimiento al COGS original;
+   * totales de ítem espejan `Product.cost` (catálogo).
    */
   async applyInSaleReturnLineTx(
     tx: Prisma.TransactionClient,
@@ -519,8 +533,7 @@ export class InventoryService {
     }
 
     const newQty = item.quantity.plus(qtyMag);
-    const newTotal = item.totalCostFunctional.plus(lineTotalFunctional);
-    const newAvg = newQty.gt(0) ? newTotal.div(newQty) : new Prisma.Decimal(0);
+    const valued = inventoryItemTotalsFromCatalog(newQty, product.cost);
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -541,8 +554,8 @@ export class InventoryService {
       where: { id: item.id },
       data: {
         quantity: newQty,
-        totalCostFunctional: newTotal,
-        averageUnitCostFunctional: newAvg,
+        totalCostFunctional: valued.totalCost,
+        averageUnitCostFunctional: valued.unitCost,
         lastAdjustedAt: new Date(),
       },
     });
@@ -597,12 +610,14 @@ export class InventoryService {
       );
     }
 
-    const avg = item.quantity.gt(0)
-      ? item.averageUnitCostFunctional
-      : new Prisma.Decimal(0);
+    const product = await tx.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const unitCost = operationalUnitCostFunctional(product.cost, null);
     const newQty = item.quantity.minus(qtyMag);
-    const newTotal = avg.mul(newQty);
-    const newAvg = newQty.gt(0) ? avg : new Prisma.Decimal(0);
+    const valued = inventoryItemTotalsFromCatalog(newQty, product.cost);
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -611,8 +626,8 @@ export class InventoryService {
         storeId,
         type: 'OUT_PURCHASE_VOID',
         quantity: qtyMag,
-        unitCostFunctional: avg,
-        totalCostFunctional: avg.mul(qtyMag),
+        unitCostFunctional: unitCost,
+        totalCostFunctional: unitCost.mul(qtyMag),
         referenceId: params.purchaseId,
         reason: 'PURCHASE_VOID',
       },
@@ -622,8 +637,8 @@ export class InventoryService {
       where: { id: item.id },
       data: {
         quantity: newQty,
-        totalCostFunctional: newTotal,
-        averageUnitCostFunctional: newAvg,
+        totalCostFunctional: valued.totalCost,
+        averageUnitCostFunctional: valued.unitCost,
         lastAdjustedAt: new Date(),
       },
     });
@@ -712,17 +727,10 @@ export class InventoryService {
       );
     }
 
-    const unitCost = operationalUnitCostFunctional(
-      product.cost,
-      item.averageUnitCostFunctional,
-    );
+    const unitCost = operationalUnitCostFunctional(product.cost, null);
     const lineCost = unitCost.mul(qtyMag);
     const newQty = item.quantity.minus(qtyMag);
-    const valued = inventoryValuationFunctional(
-      newQty,
-      product.cost,
-      item.averageUnitCostFunctional,
-    );
+    const valued = inventoryItemTotalsFromCatalog(newQty, product.cost);
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -759,5 +767,38 @@ export class InventoryService {
       totalCostFunctional: lineCost.toString(),
       quantityAfter: newQty.toString(),
     };
+  }
+
+  /**
+   * Costo unitario para IN_ADJUST (solo catálogo; sin promedio ponderado):
+   * - body explícito → ese valor (y actualiza `Product.cost` antes);
+   * - si no → `Product.cost` si > 0;
+   * - stock ≤ 0 y catálogo = 0 → error claro.
+   */
+  private resolveInAdjustUnitCost(
+    dto: Pick<InventoryAdjustDto, 'unitCostFunctional'>,
+    item: {
+      quantity: Prisma.Decimal;
+    },
+    product: { cost: Prisma.Decimal },
+  ): Prisma.Decimal {
+    if (dto.unitCostFunctional?.trim()) {
+      return new Prisma.Decimal(dto.unitCostFunctional);
+    }
+    const catalogCost = product.cost;
+    if (catalogCost != null && catalogCost.gt(0)) {
+      return catalogCost;
+    }
+    if (item.quantity.lte(0)) {
+      throw new BadRequestException({
+        code: 'UNIT_COST_REQUIRED_FOR_ZERO_STOCK',
+        message: 'Indicá costo unitario al reingresar stock con cantidad 0.',
+      });
+    }
+    throw new BadRequestException({
+      code: 'INVALID_UNIT_COST_FOR_IN_ADJUST',
+      message:
+        'Product.cost es 0; indicá unitCostFunctional o actualizá el catálogo.',
+    });
   }
 }
