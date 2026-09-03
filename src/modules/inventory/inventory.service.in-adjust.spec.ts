@@ -25,21 +25,50 @@ describe('InventoryService.applyAdjustTx IN_ADJUST', () => {
       totalCostFunctional: new Prisma.Decimal(0),
     };
 
+    const productRow = {
+      id: productId,
+      catalogStoreId: storeId,
+      sku: 'SKU-1',
+      barcode: null,
+      name: 'Test',
+      description: null,
+      image: null,
+      type: 'PRODUCT',
+      pricingMode: 'USE_STORE_DEFAULT',
+      marginPercentOverride: null,
+      categoryId: null,
+      price: new Prisma.Decimal(0),
+      cost: new Prisma.Decimal(opts.productCost ?? '0'),
+      currency: 'USD',
+      taxId: null,
+      unit: 'UN',
+      supplierId: null,
+      active: true,
+      blockSaleWithoutStock: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
     const tx = {
       stockMovement: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'mov-in-1' }),
       },
       product: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: productId,
-          cost: new Prisma.Decimal(opts.productCost ?? '0'),
-        }),
+        findUnique: jest.fn().mockResolvedValue(productRow),
+        findUniqueOrThrow: jest.fn().mockImplementation(async () => productRow),
+        update: jest.fn().mockImplementation(async ({ data }) => ({
+          ...productRow,
+          ...data,
+        })),
       },
       inventoryItem: {
         findUnique: jest.fn().mockResolvedValue(item),
         create: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
+      },
+      serverChangeLog: {
+        create: jest.fn().mockResolvedValue({ id: 'cl-1' }),
       },
     };
 
@@ -117,6 +146,13 @@ describe('InventoryService.applyAdjustTx IN_ADJUST', () => {
       unitCostFunctional: '7.25',
     });
 
+    expect(tx.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: productId },
+        data: { cost: new Prisma.Decimal('7.25') },
+      }),
+    );
+    expect(tx.serverChangeLog.create).toHaveBeenCalled();
     expect(tx.stockMovement.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
