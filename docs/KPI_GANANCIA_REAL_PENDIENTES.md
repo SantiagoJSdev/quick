@@ -8,10 +8,10 @@ Fase 1 ya está en `/kpis/snapshot` → bloque `realProfit` (bolsas 90% tickets,
 
 | Ítem | Descripción | Notas |
 |---|---|---|
-| Comisión de pagos | % sobre transferencias / punto / tarjeta | Usar `SalePayment.method` del rango |
+| Comisión de pagos | Débito BDV 2.1% · Débito BNC 2% | [`KPI_GASTOS_CONSTANTES.md`](./KPI_GASTOS_CONSTANTES.md) §4 |
 | Faltante de caja | `countedCash − expected` al cerrar `CashSession` | Solo días con cierre |
 | Merma frescos | % o monto diario sobre carne/pollo/verdura/pan | Lista de categorías o productIds |
-| `OUT_LOSS` del día | Merma ya registrada en inventario | Sumar `StockMovement` tipo `OUT_LOSS` × costo |
+| `OUT_LOSS` del día | Merma ya registrada en inventario | **Elegido:** API `POST /inventory/losses` + restar en `realProfit.deductions.losses`. Ver [`KPI_PATRIMONIO_CRECIMIENTO.md`](./KPI_PATRIMONIO_CRECIMIENTO.md) §3 |
 | Otros empaques | Film, bolsas negras, servilletas | Mismo patrón que platos |
 | Impuesto estimado | % sobre ganancia o sobre venta | Variable en config |
 | UI admin config | Pantalla para editar `realProfitConfig` sin SQL | `PATCH /business-settings` ya acepta el JSON |
@@ -23,6 +23,9 @@ Fase 1 ya está en `/kpis/snapshot` → bloque `realProfit` (bolsas 90% tickets,
 
 ### Disponible para sacar / caja neta del día
 
+> **Orden producto:** después de patrimonio + mejoras a `realProfit`.  
+> Encaja como **freno de seguridad**: el dueño quiere llevarse la ganancia real a diario; este KPI dice si la caja aguanta ese retiro sin descapitalizar. La **inyección al capital** es decisión de fin de semana sobre lo acumulado.
+
 ```text
 efectivo_cobrado_del_día
 − reserva_reposición_contado
@@ -33,12 +36,22 @@ efectivo_cobrado_del_día
 
 | Subtarea | Estado |
 |---|---|
-| Definir % o montos de split (reposición vs abono) | Pendiente |
+| Definir % o montos de split (reposición vs abono) | Pendiente (último) |
 | Vincular abonos reales `PurchasePayment` del día | Pendiente |
 | Endpoint o bloque `cashAvailable` en snapshot | Pendiente |
 | Documentar diferencia vs `realProfit` en front | Pendiente |
 
 Este KPI responde “¿cuánto puedo retirar sin descapitalizarme?”, no “¿cuánto gané operando?”.
+
+### Comisiones banco / tarjeta
+
+Mejora del motor **`realProfit`** (no KPI nuevo). Al calcularse ahí, cualquier snapshot/serie que use `realProfit` **se ajusta solo**.
+
+### Patrimonio / ¿voy creciendo?
+
+Pasos: [`KPI_IMPLEMENTACION_BACK.md`](./KPI_IMPLEMENTACION_BACK.md).  
+Constantes: [`KPI_GASTOS_CONSTANTES.md`](./KPI_GASTOS_CONSTANTES.md).  
+Front: [`KPI_FRONTEND.md`](./KPI_FRONTEND.md).
 
 ---
 

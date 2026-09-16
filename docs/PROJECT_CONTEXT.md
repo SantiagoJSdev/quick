@@ -63,6 +63,7 @@ Documento único para desarrollar y extender el backend. Índice general: [docs/
 
 ### Inventario
 - Consulta stock y kardex; `POST /inventory/adjustments` con `opId` (`IN_ADJUST` / `OUT_ADJUST`).
+- **IN_ADJUST con stock 0:** si no hay `unitCostFunctional`, usa `Product.cost`; si catálogo = 0 → `UNIT_COST_REQUIRED_FOR_ZERO_STOCK`. Detalle: [api/INVENTORY.md](./api/INVENTORY.md).
 - Costo medio en funcional: `averageUnitCostFunctional`, `totalCostFunctional`.
 
 ### Ventas / devoluciones

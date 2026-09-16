@@ -156,6 +156,16 @@ export class CreateSaleDto {
   @MaxLength(40)
   saleOrigin?: string;
 
+  @ApiPropertyOptional({
+    example: '2026-09-15T10:30:00.000Z',
+    description:
+      'Hora real de la venta en el POS (ISO-8601 UTC). Si viene, se guarda como clientSoldAt; `createdAt` sigue siendo la hora del servidor.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  clientSoldAt?: string;
+
   @ApiPropertyOptional({ type: FxSnapshotDto })
   @IsOptional()
   @ValidateNested()

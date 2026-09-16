@@ -37,6 +37,7 @@ Registra una compra recibida, actualiza inventario y movimientos en transacción
 | `lines[].productId` | UUID string | Sí | |
 | `lines[].quantity` | string numérica | Sí | Ej. `"10"` |
 | `lines[].unitCost` | string numérica | Sí | Costo unitario en moneda del documento. |
+| `lines[].productId` | — | — | **Único por factura** (mismo `productId` en dos líneas → 400 `DUPLICATE_PRODUCT_IN_PURCHASE`). |
 | `documentCurrencyCode` | string | No | Ej. `VES`. |
 | **`supplierInvoiceReference`** | string | No | Factura/guía. Máx. 120 caracteres. |
 | **`paymentStatus`** | string | No | `PAID` (default) \| `CREDIT` \| `PARTIAL`. |
@@ -47,6 +48,19 @@ Registra una compra recibida, actualiza inventario y movimientos en transacción
 | `fxSnapshot` | objeto | No | Snapshot FX. |
 
 **Validación:** lista blanca (`forbidNonWhitelisted`). Usar **`supplierInvoiceReference`**, no `reference` en REST.
+
+### Catálogo (política de costo v1)
+
+Al recibir la compra, **por cada línea** con `unitCostFunctional > 0`:
+
+1. `Product.cost` ← costo unitario funcional de la línea (último costo proveedor; **no** promedio inventario).
+2. Si `pricingMode` ≠ `MANUAL_PRICE` → recalcula y persiste `Product.price` con margen de tienda (M7).
+3. Línea con costo 0 en factura → **no** cambia `Product.cost`.
+4. Emite `PRODUCT_UPDATED` en change log (sync pull).
+
+**Anulación (`VOID`):** revierte `Product.cost` (y `price` si se recalculó) al valor previo a esa recepción.
+
+Ver [COST_POLICY.md](../COST_POLICY.md).
 
 ### Ejemplo — crédito
 

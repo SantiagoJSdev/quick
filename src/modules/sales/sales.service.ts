@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { convertAmountDocumentToFunctional } from '../../common/fx/convert-amount';
+import { roundCurrency2 } from '../../common/fx/round-currency';
 import { resolveSaleLineUnitCostFunctional } from '../../common/sales/sale-line-cogs';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ResolvedFxSnapshot } from '../exchange-rates/store-fx-snapshot.service';
@@ -251,6 +252,7 @@ export class SalesService {
         funcCode,
         fx,
         totalDoc,
+        totalFunc,
       },
       paymentMethodMap,
       warnings,
@@ -270,6 +272,7 @@ export class SalesService {
       ? 'ALLOW_NEGATIVE'
       : 'STRICT';
     const saleOrigin = opts?.saleOrigin ?? dto.saleOrigin ?? null;
+    const clientSoldAt = this.parseClientSoldAtOptional(dto.clientSoldAt);
 
     const sale = await tx.sale.create({
       data: {
@@ -291,6 +294,7 @@ export class SalesService {
         inventoryValidationMode,
         stockConflictDetected: anyStockConflict,
         saleOrigin,
+        clientSoldAt,
         saleLines: { create: lineCreates },
       },
       include: { saleLines: true },
@@ -348,6 +352,26 @@ export class SalesService {
     return this.attachPaymentSummary({ ...sale, payments });
   }
 
+  private parseClientSoldAtOptional(raw: string | undefined): Date | null {
+    if (raw == null || raw.trim() === '') {
+      return null;
+    }
+    const trimmed = raw.trim();
+    const ms = Date.parse(trimmed);
+    if (!Number.isFinite(ms)) {
+      throw new BadRequestException(
+        'clientSoldAt must be a valid ISO-8601 datetime',
+      );
+    }
+    // Holgura mínima hacia el futuro (reloj del POS un poco adelantado).
+    const FUTURE_SKEW_MS = 2 * 60 * 1000;
+    if (ms > Date.now() + FUTURE_SKEW_MS) {
+      throw new BadRequestException('clientSoldAt cannot be in the future');
+    }
+    // Sin límite de antigüedad: ventas offline pueden sincronizarse días después.
+    return new Date(ms);
+  }
+
   private buildSalePaymentCreates(
     dto: CreateSaleDto,
     ctx: {
@@ -355,6 +379,7 @@ export class SalesService {
       funcCode: string;
       fx: ResolvedFxSnapshot;
       totalDoc: Prisma.Decimal;
+      totalFunc: Prisma.Decimal;
     },
     paymentMethodMap: Map<
       string,
@@ -394,6 +419,7 @@ export class SalesService {
     const docCode = ctx.docCode.toUpperCase();
     const funcCode = ctx.funcCode.toUpperCase();
     let sumDoc = new Prisma.Decimal(0);
+    let sumFunc = new Prisma.Decimal(0);
     const creates: Array<{
       method: string;
       amount: Prisma.Decimal;
@@ -503,6 +529,7 @@ export class SalesService {
         .div(100);
 
       sumDoc = sumDoc.plus(amountDocumentCurrency);
+      sumFunc = sumFunc.plus(roundCurrency2(amountFunctional));
       creates.push({
         method,
         amount,
@@ -529,17 +556,22 @@ export class SalesService {
     }
 
     // Allow tiny difference caused by decimal representation/rounding between client/backend.
-    const delta = sumDoc.minus(ctx.totalDoc).abs();
+    // Se compara en moneda funcional redondeada a 2 decimales (mismo criterio que el
+    // front): el pago se determina en funcional, y el front lo redondea a centavos.
+    const totalFuncRounded = roundCurrency2(ctx.totalFunc);
+    const delta = sumFunc.minus(totalFuncRounded).abs();
     if (delta.gt(new Prisma.Decimal('0.01'))) {
-      const direction = sumDoc.gt(ctx.totalDoc) ? 'overpaid' : 'missing';
+      const direction = sumFunc.gt(totalFuncRounded) ? 'overpaid' : 'missing';
       throw new BadRequestException(
         {
           code: 'PAYMENTS_TOTAL_MISMATCH',
           message: 'Payments total does not match sale total',
           direction,
+          sumPaymentsFunctional: sumFunc.toString(),
+          totalFunctional: totalFuncRounded.toString(),
+          deltaFunctional: delta.toString(),
           sumPaymentsDocument: sumDoc.toString(),
           totalDocument: ctx.totalDoc.toString(),
-          delta: delta.toString(),
         },
       );
     }

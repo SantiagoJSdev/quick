@@ -19,7 +19,7 @@ Fecha: 2026-08-13 · Tienda Quick Market `0b54c944-28ba-4542-991a-4840c4801906`
 | Payables excluye `VOID` | OK |
 | Stock alerts activos only | OK |
 | Logs + `realProfit.explain` auditables | OK |
-| Docs front (`KPI_SNAPSHOT_FRONTEND.md` / `api/KPIS.md`) | OK |
+| Docs front (`KPI_FRONTEND.md` / `api/KPIS.md`) | OK |
 
 ## Comportamiento aceptado (no es bug)
 

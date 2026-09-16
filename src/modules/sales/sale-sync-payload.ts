@@ -178,6 +178,7 @@ export function parseSalePayload(
     fxSnapshot,
     payments: payments.length > 0 ? payments : undefined,
     saleOrigin: typeof s.saleOrigin === 'string' ? s.saleOrigin : undefined,
+    clientSoldAt: typeof s.clientSoldAt === 'string' ? s.clientSoldAt : undefined,
   };
 
   if (typeof s.id !== 'string' || s.id.trim() === '') {

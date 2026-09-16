@@ -177,6 +177,7 @@ export class SyncService {
     const skipped: SyncPushResult['skipped'] = [];
     const failed: SyncPushResult['failed'] = [];
 
+    // Preludio en transacción corta: heartbeat del dispositivo + estado de sync.
     await this.prisma.$transaction(
       async (tx) => {
         await this.posDevice.touchOrRegister(tx, storeId, dto.deviceId, {
@@ -187,23 +188,37 @@ export class SyncService {
           create: { storeId, serverVersion: 0 },
           update: {},
         });
-
-        const clientSupplierMap = new Map<string, string>();
-
-        for (const op of dto.ops) {
-          await this.processOneOp(tx, storeId, dto.deviceId, op, {
-            acked,
-            skipped,
-            failed,
-          }, clientSupplierMap);
-        }
       },
       {
         maxWait: 5000,
         timeout: 30000,
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
+
+    // Cada op en su propia transacción: progreso durable por op (idempotente) y
+    // sin arriesgar el timeout de 30s al procesar un lote entero de una vez.
+    // ReadCommitted evita los stalls de Serializable sobre un lote multi-op.
+    const clientSupplierMap = new Map<string, string>();
+    for (const op of dto.ops) {
+      await this.prisma.$transaction(
+        async (tx) => {
+          await this.processOneOp(
+            tx,
+            storeId,
+            dto.deviceId,
+            op,
+            { acked, skipped, failed },
+            clientSupplierMap,
+          );
+        },
+        {
+          maxWait: 5000,
+          timeout: 30000,
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
+    }
 
     return { serverTime: new Date().toISOString(), acked, skipped, failed };
   }

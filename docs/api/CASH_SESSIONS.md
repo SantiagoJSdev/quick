@@ -24,11 +24,48 @@ Content-Type: application/json
 {
   "deviceId": "68a65e72-5e2a-4712-baa0-53281390d156",
   "openingCash": "100.00",
+  "clientOpenedAt": "2026-08-29T12:00:00.000Z",
   "appVersion": "1.0.0"
 }
 ```
 
 Registra/actualiza el `POSDevice` si hace falta.
+
+### Idempotencia y fondo (sesión OPEN existente)
+
+Si ya hay `OPEN` para el mismo `storeId` + `deviceId`:
+
+| `openingCash` en servidor | Body | Efecto |
+|---------------------------|------|--------|
+| `null` / `0` / `0.00` | `openingCash` ≥ 0 | **Actualiza** el fondo en esa misma sesión (claim de “zombie”) |
+| ≠ 0 (ej. `50`) | cualquier `openingCash` | **No pisa**; devuelve la sesión tal cual |
+
+No hay `PATCH`: todo va en este POST.
+
+### `clientOpenedAt` (apertura offline)
+
+Campo **opcional**, ISO-8601 UTC. Si viene:
+
+- Al **crear** sesión → se usa como `openedAt` (en lugar de `now()` del servidor).
+- Si hay OPEN “zombie” (fondo null/0) → también puede corregir `openedAt` en el claim.
+- Si la OPEN ya tiene fondo ≠ 0 → **no** se reescribe `openedAt`.
+
+Límites (400 si falla):
+
+- Debe ser datetime válido.
+- No futuro (margen ~2 min por reloj del POS).
+- No más de **36 horas** atrás.
+
+Así, si abren a las 08:00 sin red y sincronizan a las 12:00, el summary del turno sigue el rango desde las 08:00 (`[openedAt, now|closedAt]`).
+
+### Body
+
+| Campo | Obligatorio | Notas |
+|-------|-------------|-------|
+| `deviceId` | sí | Mismo id de sync/ventas |
+| `openingCash` | no | Decimal ≥ 0 string |
+| `clientOpenedAt` | no | ISO UTC; ver reglas arriba |
+| `appVersion` | no | Info del POS |
 
 ## Summary (ejemplo)
 
@@ -86,10 +123,12 @@ Content-Type: application/json
 
 ## Flujo FE recomendado
 
-1. Al iniciar turno → `POST /cash-sessions`.
-2. Durante el día → sync continuo; opcional `GET .../summary`.
-3. Al cerrar → push/pull si hay red → `POST .../close` con pendientes que queden.
-4. Cola local sigue hasta ACK; el server solo guarda la declaración.
+1. Al iniciar turno (con o sin red) → guardar localmente `clientOpenedAt` = ahora UTC + fondo contado.
+2. Al sincronizar apertura → `POST /cash-sessions` con `deviceId`, `openingCash`, `clientOpenedAt`.
+3. Confirmar en la respuesta que `openingCash` y `openedAt` coinciden con lo enviado (claim zombie o sesión nueva).
+4. Durante el día → sync continuo; opcional `GET .../summary`.
+5. Al cerrar → push/pull si hay red → `POST .../close` con pendientes que queden.
+6. Cola local sigue hasta ACK; el server solo guarda la declaración.
 
 ## Errores
 

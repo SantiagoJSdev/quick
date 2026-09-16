@@ -34,11 +34,13 @@ El cliente debe enviar **`X-Store-Id`** igual a **`payload.sale.storeId`**.
 
 3. **`sale.lines[].productId`**: string UUID.
 
-4. **`payload.sale`**: objeto obligatorio; **`lines`**: array con al menos un elemento.
+4. **`sale.lines[].unitCostFunctional`** (recomendado offline): string decimal — COGS unitario en moneda funcional **al cobro en el POS**. Si se omite en sync, el servidor usa `Product.cost` actual (evitar en offline).
 
-5. **`payments`** (opcional): cada ítem necesita `method`, `amount`, `currencyCode` como **strings**. Si un pago incluye **`fxSnapshot`**, deben ir **todos** los campos obligatorios del snapshot como strings (`baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate`); un objeto incompleto aquí hace fallar el parseo de toda la venta.
+5. **`payload.sale`**: objeto obligatorio; **`lines`**: array con al menos un elemento.
 
-6. **`fxSnapshot` / `fx` en `sale`** (opcional): si se envía objeto completo (cuatro campos string obligatorios), se usa; si el objeto está incompleto, se **ignora** y el servidor resuelve FX por configuración.
+6. **`payments`** (opcional): cada ítem necesita `method`, `amount`, `currencyCode` como **strings**. Si un pago incluye **`fxSnapshot`**, deben ir **todos** los campos obligatorios del snapshot como strings (`baseCurrencyCode`, `quoteCurrencyCode`, `rateQuotePerBase`, `effectiveDate`); un objeto incompleto aquí hace fallar el parseo de toda la venta. La suma de pagos se confronta contra el total de la venta en **moneda funcional**, redondeada a 2 decimales (tolerancia ±0.01), para absorber el redondeo de centavos en cantidades fraccionarias.
+
+7. **`fxSnapshot` / `fx` en `sale`** (opcional): si se envía objeto completo (cuatro campos string obligatorios), se usa; si el objeto está incompleto, se **ignora** y el servidor resuelve FX por configuración.
 
 ## Stock negativo (B1)
 

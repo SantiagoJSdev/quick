@@ -84,6 +84,7 @@ Inicio, Inventario, Catálogo, POS, Compras y Devoluciones operativos sin red; a
 ### Núcleo (Flutter)
 - `ConnectivityService`, cola SQLite, `SyncEngine` con lock, scheduler + pull incremental (`since`).
 - Compras offline: op `PURCHASE_RECEIVE` con `fxSnapshot` completo.
+- Ventas offline: en cada línea del sync `SALE`, enviar `unitCostFunctional` (COGS unitario en USD funcional **al cobro** desde el catálogo local). Ver [api/SYNC_PUSH_SALE.md](./api/SYNC_PUSH_SALE.md) y [COST_POLICY.md](./COST_POLICY.md).
 - Catálogo offline: cache + cola `pending_catalog_mutations_v1`.
 - Config URL desde Ajustes: `http://ip:puerto/api/v1`, probar conexión, perfiles LAN/Local/Prod, persistir y mostrar badge entorno.
 
@@ -146,7 +147,7 @@ Backend **listo**. `POST /sales` y sync `SALE` aceptan `payments[]` opcional.
 ```
 
 ### Errores
-`PAYMENTS_INVALID_AMOUNT`, `PAYMENTS_MISSING_FX_SNAPSHOT`, `PAYMENTS_FX_PAIR_MISMATCH`, `PAYMENTS_TOTAL_MISMATCH` (tolerancia suma ±0.01 documento).
+`PAYMENTS_INVALID_AMOUNT`, `PAYMENTS_MISSING_FX_SNAPSHOT`, `PAYMENTS_FX_PAIR_MISMATCH`, `PAYMENTS_TOTAL_MISMATCH` (la suma de pagos se valida contra el total de la venta en **moneda funcional**, redondeada a 2 decimales; tolerancia ±0.01 funcional).
 
 ### Respuesta venta
 `GET /sales/:id` incluye `payments`, `paymentsCount`, `paidDocumentTotal`, `changeDocument`.
